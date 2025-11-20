@@ -1,0 +1,146 @@
+html {
+    font-size: 14px;
+    direction: rtl;
+}
+
+body {
+    direction: rtl;
+    text-align: right;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Hebrew RTL Support */
+[dir="rtl"] {
+    direction: rtl;
+    text-align: right;
+}
+
+/* Navigation */
+.navbar {
+    direction: rtl;
+}
+
+.navbar-nav {
+    direction: rtl;
+}
+
+/* Cards */
+.card {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    margin-bottom: 20px;
+}
+
+.card-header {
+    font-weight: bold;
+}
+
+/* Tables */
+.table {
+    direction: rtl;
+}
+
+.table thead {
+    background-color: #343a40;
+    color: white;
+}
+
+/* Buttons */
+.btn {
+    margin-left: 5px;
+    margin-right: 5px;
+}
+
+.btn:first-child {
+    margin-right: 0;
+}
+
+.btn:last-child {
+    margin-left: 0;
+}
+
+/* Forms */
+.form-control,
+.form-select {
+    direction: rtl;
+    text-align: right;
+}
+
+.form-check-label {
+    padding-right: 1.5em;
+    padding-left: 0;
+}
+
+.form-check-input {
+    margin-right: -1.5em;
+    margin-left: 0;
+}
+
+/* Badges */
+.badge {
+    font-size: 0.9em;
+}
+
+/* Timeline */
+.timeline {
+    position: relative;
+    padding-right: 30px;
+}
+
+.timeline::before {
+    content: '';
+    position: absolute;
+    right: 10px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #dee2e6;
+}
+
+/* Footer */
+.footer {
+    background-color: #f8f9fa;
+    padding: 20px 0;
+    margin-top: 50px;
+}
+
+/* Search inputs */
+#employeeSearch,
+#managerSearch {
+    direction: rtl;
+}
+
+/* Employee list */
+.employee-list {
+    border: 1px solid #dee2e6;
+    border-radius: 0.25rem;
+    padding: 10px;
+}
+
+.employee-item {
+    padding: 5px;
+}
+
+.employee-item:hover {
+    background-color: #f8f9fa;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    html {
+        font-size: 12px;
+    }
+    
+    .card-body {
+        padding: 1rem;
+    }
+}
+
+/* Print styles */
+@media print {
+    .navbar,
+    .footer,
+    .btn {
+        display: none;
+    }
+}
+

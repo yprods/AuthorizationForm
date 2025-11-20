@@ -1,0 +1,210 @@
+@model AuthorizationRequest
+@{
+    ViewData["Title"] = "פרטי בקשה";
+    var currentUser = User;
+    var isAdmin = User.IsInRole("Admin");
+    var isManager = User.IsInRole("Manager");
+    var canCancel = (Model.Status == RequestStatus.Draft || Model.Status == RequestStatus.PendingManagerApproval) && Model.UserId == User.Identity.Name;
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-file-text"></i> פרטי בקשה #@Model.Id</h2>
+    <div>
+        @if (!string.IsNullOrEmpty(Model.PdfPath))
+        {
+            <a asp-action="DownloadPdf" asp-route-id="@Model.Id" class="btn btn-success">
+                <i class="bi bi-download"></i> הורד PDF
+            </a>
+        }
+        <a asp-action="Index" class="btn btn-secondary">
+            <i class="bi bi-arrow-right"></i> חזרה לרשימה
+        </a>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5><i class="bi bi-info-circle"></i> פרטי הבקשה</h5>
+            </div>
+            <div class="card-body">
+                <dl class="row">
+                    <dt class="col-sm-4">מספר בקשה:</dt>
+                    <dd class="col-sm-8">@Model.Id</dd>
+
+                    <dt class="col-sm-4">מבקש:</dt>
+                    <dd class="col-sm-8">@Model.User?.FullName (@Model.User?.Email)</dd>
+
+                    <dt class="col-sm-4">רמת שירות:</dt>
+                    <dd class="col-sm-8">
+                        @switch (Model.ServiceLevel)
+                        {
+                            case ServiceLevel.UserLevel:
+                                <span class="badge bg-info">רמת משתמש</span>
+                                break;
+                            case ServiceLevel.OtherUserLevel:
+                                <span class="badge bg-warning">רמת משתמש אחר</span>
+                                break;
+                            case ServiceLevel.MultipleUsers:
+                                <span class="badge bg-secondary">ריבוי משתמשים</span>
+                                break;
+                        }
+                    </dd>
+
+                    <dt class="col-sm-4">מערכות נבחרו:</dt>
+                    <dd class="col-sm-8">@Model.SelectedSystems</dd>
+
+                    <dt class="col-sm-4">עובדים נבחרו:</dt>
+                    <dd class="col-sm-8">@Model.SelectedEmployees</dd>
+
+                    <dt class="col-sm-4">מנהל אחראי:</dt>
+                    <dd class="col-sm-8">@Model.Manager?.FullName (@Model.Manager?.Email)</dd>
+
+                    @if (!string.IsNullOrEmpty(Model.Comments))
+                    {
+                        <dt class="col-sm-4">הערות:</dt>
+                        <dd class="col-sm-8">@Model.Comments</dd>
+                    }
+
+                    <dt class="col-sm-4">סטטוס:</dt>
+                    <dd class="col-sm-8">
+                        @switch (Model.Status)
+                        {
+                            case RequestStatus.Draft:
+                                <span class="badge bg-secondary">טיוטה</span>
+                                break;
+                            case RequestStatus.PendingManagerApproval:
+                                <span class="badge bg-warning">ממתין לאישור מנהל</span>
+                                break;
+                            case RequestStatus.PendingFinalApproval:
+                                <span class="badge bg-info">ממתין לאישור סופי</span>
+                                break;
+                            case RequestStatus.Approved:
+                                <span class="badge bg-success">אושר</span>
+                                break;
+                            case RequestStatus.Rejected:
+                                <span class="badge bg-danger">נדחה</span>
+                                break;
+                            case RequestStatus.CancelledByUser:
+                                <span class="badge bg-dark">בוטל על ידי משתמש</span>
+                                break;
+                            case RequestStatus.CancelledByManager:
+                                <span class="badge bg-dark">בוטל על ידי מנהל</span>
+                                break;
+                        }
+                    </dd>
+
+                    <dt class="col-sm-4">תאריך יצירה:</dt>
+                    <dd class="col-sm-8">@Model.CreatedAt.ToString("dd/MM/yyyy HH:mm")</dd>
+
+                    @if (Model.ManagerApprovedAt.HasValue)
+                    {
+                        <dt class="col-sm-4">תאריך אישור מנהל:</dt>
+                        <dd class="col-sm-8">@Model.ManagerApprovedAt.Value.ToString("dd/MM/yyyy HH:mm")</dd>
+                        <dt class="col-sm-4">חתימת מנהל:</dt>
+                        <dd class="col-sm-8">@Model.ManagerApprovalSignature</dd>
+                    }
+
+                    @if (Model.FinalApprovedAt.HasValue)
+                    {
+                        <dt class="col-sm-4">תאריך אישור סופי:</dt>
+                        <dd class="col-sm-8">@Model.FinalApprovedAt.Value.ToString("dd/MM/yyyy HH:mm")</dd>
+                        <dt class="col-sm-4">החלטה סופית:</dt>
+                        <dd class="col-sm-8">
+                            @if (Model.FinalApprovalDecision == "Approved")
+                            {
+                                <span class="badge bg-success">אושר</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-danger">נדחה</span>
+                            }
+                        </dd>
+                    }
+
+                    @if (!string.IsNullOrEmpty(Model.RejectionReason))
+                    {
+                        <dt class="col-sm-4">סיבת דחייה:</dt>
+                        <dd class="col-sm-8 text-danger">@Model.RejectionReason</dd>
+                    }
+                </dl>
+
+                <div class="mt-3">
+                    @if (canCancel && Model.Status == RequestStatus.Draft)
+                    {
+                        <form asp-action="Cancel" asp-route-id="@Model.Id" method="post" class="d-inline">
+                            <button type="submit" class="btn btn-danger" onclick="return confirm('האם אתה בטוח שברצונך לבטל את הבקשה?')">
+                                <i class="bi bi-x-circle"></i> בטל בקשה
+                            </button>
+                        </form>
+                    }
+
+                    @if (isAdmin && (Model.Status == RequestStatus.PendingManagerApproval || Model.Status == RequestStatus.PendingFinalApproval))
+                    {
+                        <a asp-action="ChangeManager" asp-route-id="@Model.Id" class="btn btn-warning">
+                            <i class="bi bi-person-badge"></i> החלף מנהל
+                        </a>
+                    }
+                </div>
+            </div>
+        </div>
+
+        @if (Model.History != null && Model.History.Any())
+        {
+            <div class="card">
+                <div class="card-header bg-info text-white">
+                    <h5><i class="bi bi-clock-history"></i> היסטוריית בקשה</h5>
+                </div>
+                <div class="card-body">
+                    <div class="timeline">
+                        @foreach (var history in Model.History.OrderBy(h => h.CreatedAt))
+                        {
+                            <div class="mb-3">
+                                <strong>@history.CreatedAt.ToString("dd/MM/yyyy HH:mm")</strong> - 
+                                <span>@history.ActionPerformedBy</span>
+                                <p class="mb-0">@history.PreviousStatus → @history.NewStatus</p>
+                                @if (!string.IsNullOrEmpty(history.Comments))
+                                {
+                                    <small class="text-muted">@history.Comments</small>
+                                }
+                                <hr />
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+
+    <div class="col-md-4">
+        @if (Model.Status == RequestStatus.PendingManagerApproval && ((isManager && Model.ManagerId == User.Identity?.Name) || isAdmin))
+        {
+            <div class="card mb-3">
+                <div class="card-header bg-warning text-white">
+                    <h5><i class="bi bi-check-circle"></i> אישור מנהל</h5>
+                </div>
+                <div class="card-body">
+                    <a asp-action="ManagerApprove" asp-route-id="@Model.Id" class="btn btn-primary w-100">
+                        <i class="bi bi-check-circle"></i> היכנס לאישור
+                    </a>
+                </div>
+            </div>
+        }
+
+        @if (Model.Status == RequestStatus.PendingFinalApproval && (isManager || isAdmin))
+        {
+            <div class="card mb-3">
+                <div class="card-header bg-success text-white">
+                    <h5><i class="bi bi-check2-all"></i> אישור סופי</h5>
+                </div>
+                <div class="card-body">
+                    <a asp-action="FinalApprove" asp-route-id="@Model.Id" class="btn btn-success w-100">
+                        <i class="bi bi-check2-all"></i> היכנס לאישור סופי
+                    </a>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+

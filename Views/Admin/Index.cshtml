@@ -1,0 +1,58 @@
+@{
+    ViewData["Title"] = "לוח בקרה";
+}
+
+<h2><i class="bi bi-speedometer2"></i> לוח בקרה - מנהל מערכת</h2>
+<hr />
+
+<div class="row">
+    <div class="col-md-3 mb-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <i class="bi bi-people display-4 text-primary mb-2"></i>
+                <h5>עובדים</h5>
+                <p class="card-text">ניהול רשימת עובדים</p>
+                <a asp-action="Employees" class="btn btn-primary">
+                    <i class="bi bi-arrow-left"></i> ניהול עובדים
+                </a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <i class="bi bi-laptop display-4 text-success mb-2"></i>
+                <h5>מערכות</h5>
+                <p class="card-text">ניהול רשימת מערכות</p>
+                <a asp-action="Systems" class="btn btn-success">
+                    <i class="bi bi-arrow-left"></i> ניהול מערכות
+                </a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <i class="bi bi-person-badge display-4 text-warning mb-2"></i>
+                <h5>מנהלים</h5>
+                <p class="card-text">ניהול רשימת מנהלים</p>
+                <a asp-action="Managers" class="btn btn-warning">
+                    <i class="bi bi-arrow-left"></i> ניהול מנהלים
+                </a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <i class="bi bi-file-earmark-text display-4 text-info mb-2"></i>
+                <h5>תבניות</h5>
+                <p class="card-text">ניהול תבניות טפסים</p>
+                <a asp-action="FormTemplates" class="btn btn-info">
+                    <i class="bi bi-arrow-left"></i> ניהול תבניות
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+

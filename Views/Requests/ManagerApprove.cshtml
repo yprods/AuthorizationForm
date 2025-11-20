@@ -1,0 +1,80 @@
+@model AuthorizationRequest
+@{
+    ViewData["Title"] = "אישור מנהל";
+}
+
+<h2><i class="bi bi-check-circle"></i> אישור מנהל - בקשה #@Model.Id</h2>
+<hr />
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5>פרטי הבקשה</h5>
+            </div>
+            <div class="card-body">
+                <dl class="row">
+                    <dt class="col-sm-4">מבקש:</dt>
+                    <dd class="col-sm-8">@Model.User?.FullName</dd>
+                    <dt class="col-sm-4">מערכות:</dt>
+                    <dd class="col-sm-8">@Model.SelectedSystems</dd>
+                    @if (!string.IsNullOrEmpty(Model.Comments))
+                    {
+                        <dt class="col-sm-4">הערות:</dt>
+                        <dd class="col-sm-8">@Model.Comments</dd>
+                    }
+                </dl>
+            </div>
+        </div>
+
+        <form asp-action="ManagerApprove" method="post">
+            <input type="hidden" asp-for="Id" />
+            
+            <div class="card mb-3">
+                <div class="card-header bg-warning">
+                    <h5>אימות Active Directory</h5>
+                </div>
+                <div class="card-body">
+                    <div class="form-group mb-3">
+                        <label class="form-label">שם משתמש (Active Directory)</label>
+                        <input type="text" name="username" class="form-control" required />
+                    </div>
+                    <div class="form-group mb-3">
+                        <label class="form-label">סיסמא</label>
+                        <input type="password" name="password" class="form-control" required />
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header bg-success">
+                    <h5>החלטה</h5>
+                </div>
+                <div class="card-body">
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="radio" name="approved" id="approve" value="true" checked>
+                        <label class="form-check-label" for="approve">
+                            <i class="bi bi-check-circle text-success"></i> מאשר
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="approved" id="reject" value="false">
+                        <label class="form-check-label" for="reject">
+                            <i class="bi bi-x-circle text-danger"></i> דוחה
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-check-circle"></i> שלח החלטה
+                </button>
+                <a asp-action="Details" asp-route-id="@Model.Id" class="btn btn-secondary">
+                    <i class="bi bi-x-circle"></i> ביטול
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+

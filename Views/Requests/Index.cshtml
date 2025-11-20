@@ -1,0 +1,107 @@
+@model IEnumerable<AuthorizationRequest>
+@{
+    ViewData["Title"] = "הבקשות שלי";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-list-ul"></i> הבקשות שלי</h2>
+    <a asp-action="Create" class="btn btn-primary">
+        <i class="bi bi-plus-circle"></i> בקשה חדשה
+    </a>
+</div>
+
+@if (Model.Any())
+{
+    <div class="table-responsive">
+        <table class="table table-striped table-hover">
+            <thead class="table-dark">
+                <tr>
+                    <th>מספר בקשה</th>
+                    <th>מבקש</th>
+                    <th>רמת שירות</th>
+                    <th>מנהל אחראי</th>
+                    <th>סטטוס</th>
+                    <th>תאריך יצירה</th>
+                    <th>פעולות</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var request in Model)
+                {
+                    <tr>
+                        <td>@request.Id</td>
+                        <td>@request.User?.FullName</td>
+                        <td>
+                            @switch (request.ServiceLevel)
+                            {
+                                case ServiceLevel.UserLevel:
+                                    <span class="badge bg-info">רמת משתמש</span>
+                                    break;
+                                case ServiceLevel.OtherUserLevel:
+                                    <span class="badge bg-warning">רמת משתמש אחר</span>
+                                    break;
+                                case ServiceLevel.MultipleUsers:
+                                    <span class="badge bg-secondary">ריבוי משתמשים</span>
+                                    break;
+                            }
+                        </td>
+                        <td>@request.Manager?.FullName</td>
+                        <td>
+                            @switch (request.Status)
+                            {
+                                case RequestStatus.Draft:
+                                    <span class="badge bg-secondary">טיוטה</span>
+                                    break;
+                                case RequestStatus.PendingManagerApproval:
+                                    <span class="badge bg-warning">ממתין לאישור מנהל</span>
+                                    break;
+                                case RequestStatus.PendingFinalApproval:
+                                    <span class="badge bg-info">ממתין לאישור סופי</span>
+                                    break;
+                                case RequestStatus.Approved:
+                                    <span class="badge bg-success">אושר</span>
+                                    break;
+                                case RequestStatus.Rejected:
+                                    <span class="badge bg-danger">נדחה</span>
+                                    break;
+                                case RequestStatus.CancelledByUser:
+                                    <span class="badge bg-dark">בוטל על ידי משתמש</span>
+                                    break;
+                                case RequestStatus.CancelledByManager:
+                                    <span class="badge bg-dark">בוטל על ידי מנהל</span>
+                                    break;
+                            }
+                        </td>
+                        <td>@request.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td>
+                        <td>
+                            <a asp-action="Details" asp-route-id="@request.Id" class="btn btn-sm btn-info">
+                                <i class="bi bi-eye"></i> פרטים
+                            </a>
+                            @if (request.Status == RequestStatus.Draft || request.Status == RequestStatus.PendingManagerApproval)
+                            {
+                                <form asp-action="Cancel" asp-route-id="@request.Id" method="post" class="d-inline">
+                                    <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('האם אתה בטוח שברצונך לבטל את הבקשה?')">
+                                        <i class="bi bi-x-circle"></i> בטל
+                                    </button>
+                                </form>
+                            }
+                            @if (!string.IsNullOrEmpty(request.PdfPath))
+                            {
+                                <a asp-action="DownloadPdf" asp-route-id="@request.Id" class="btn btn-sm btn-success">
+                                    <i class="bi bi-download"></i> PDF
+                                </a>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+else
+{
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle"></i> אין בקשות להצגה
+    </div>
+}
+

@@ -1,0 +1,89 @@
+@model AuthorizationRequest
+@{
+    ViewData["Title"] = "החלף מנהל";
+    var managers = ViewBag.Managers as List<ApplicationUser>;
+}
+
+<h2><i class="bi bi-person-badge"></i> החלף מנהל אחראי - בקשה #@Model.Id</h2>
+<hr />
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card mb-4">
+            <div class="card-header bg-warning text-white">
+                <h5>פרטי הבקשה הנוכחית</h5>
+            </div>
+            <div class="card-body">
+                <dl class="row">
+                    <dt class="col-sm-4">מנהל נוכחי:</dt>
+                    <dd class="col-sm-8">@Model.Manager?.FullName (@Model.Manager?.Email)</dd>
+                    <dt class="col-sm-4">מבקש:</dt>
+                    <dd class="col-sm-8">@Model.User?.FullName</dd>
+                    <dt class="col-sm-4">סטטוס:</dt>
+                    <dd class="col-sm-8">@Model.Status</dd>
+                </dl>
+            </div>
+        </div>
+
+        <form asp-action="ChangeManager" method="post">
+            <input type="hidden" asp-for="Id" />
+            
+            <div class="card mb-3">
+                <div class="card-header bg-primary text-white">
+                    <h5>בחר מנהל חדש</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-2">
+                        <input type="text" id="managerSearch" class="form-control" placeholder="חפש מנהל..." />
+                    </div>
+                    <select name="newManagerId" class="form-select" id="managerSelect" required>
+                        <option value="">בחר מנהל אחראי חדש</option>
+                        @if (managers != null)
+                        {
+                            @foreach (var manager in managers)
+                            {
+                                @if (manager.Id != Model.ManagerId)
+                                {
+                                    <option value="@manager.Id" data-name="@manager.FullName">@manager.FullName - @manager.Email</option>
+                                }
+                            }
+                        }
+                    </select>
+                </div>
+            </div>
+
+            <div class="alert alert-warning">
+                <i class="bi bi-exclamation-triangle"></i> <strong>שים לב:</strong> החלפת המנהל תשלח מייל למנהל החדש לאשר את הבקשה.
+            </div>
+
+            <div class="form-group">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-check-circle"></i> החלף מנהל
+                </button>
+                <a asp-action="Details" asp-route-id="@Model.Id" class="btn btn-secondary">
+                    <i class="bi bi-x-circle"></i> ביטול
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        $(document).ready(function() {
+            // Manager search
+            $('#managerSearch').on('keyup', function() {
+                var value = $(this).val().toLowerCase();
+                $('#managerSelect option').each(function() {
+                    var text = $(this).text().toLowerCase();
+                    if (text.indexOf(value) > -1 || value === '') {
+                        $(this).show();
+                    } else {
+                        $(this).hide();
+                    }
+                });
+            });
+        });
+    </script>
+}
+

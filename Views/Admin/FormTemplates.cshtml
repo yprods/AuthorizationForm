@@ -1,0 +1,70 @@
+@model IEnumerable<FormTemplate>
+@{
+    ViewData["Title"] = "ניהול תבניות";
+}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-file-earmark-text"></i> ניהול תבניות</h2>
+    <a asp-action="CreateFormTemplate" class="btn btn-primary">
+        <i class="bi bi-plus-circle"></i> תבנית חדשה
+    </a>
+</div>
+
+@if (Model.Any())
+{
+    <div class="table-responsive">
+        <table class="table table-striped table-hover">
+            <thead class="table-dark">
+                <tr>
+                    <th>שם</th>
+                    <th>תיאור</th>
+                    <th>נוצר על ידי</th>
+                    <th>פעיל</th>
+                    <th>תאריך יצירה</th>
+                    <th>פעולות</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var template in Model)
+                {
+                    <tr>
+                        <td>@template.Name</td>
+                        <td>@template.Description</td>
+                        <td>@template.CreatedBy?.FullName</td>
+                        <td>
+                            @if (template.IsActive)
+                            {
+                                <span class="badge bg-success">פעיל</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-secondary">לא פעיל</span>
+                            }
+                        </td>
+                        <td>@template.CreatedAt.ToString("dd/MM/yyyy")</td>
+                        <td>
+                            <a asp-action="EditFormTemplate" asp-route-id="@template.Id" class="btn btn-sm btn-warning">
+                                <i class="bi bi-pencil"></i> ערוך
+                            </a>
+                            @if (template.IsActive)
+                            {
+                                <form asp-action="DeleteFormTemplate" asp-route-id="@template.Id" method="post" class="d-inline">
+                                    <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('האם אתה בטוח שברצונך למחוק?')">
+                                        <i class="bi bi-trash"></i> מחק
+                                    </button>
+                                </form>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+else
+{
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle"></i> אין תבניות במערכת
+    </div>
+}
+

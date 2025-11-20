@@ -1,0 +1,63 @@
+@model IEnumerable<ApplicationUser>
+@{
+    ViewData["Title"] = "ניהול מנהלים";
+}
+
+<h2><i class="bi bi-person-badge"></i> ניהול מנהלים</h2>
+<hr />
+
+@if (Model.Any())
+{
+    <div class="table-responsive">
+        <table class="table table-striped table-hover">
+            <thead class="table-dark">
+                <tr>
+                    <th>שם מלא</th>
+                    <th>אימייל</th>
+                    <th>מחלקה</th>
+                    <th>מנהל</th>
+                    <th>אדמין</th>
+                    <th>תאריך יצירה</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var manager in Model)
+                {
+                    <tr>
+                        <td>@manager.FullName</td>
+                        <td>@manager.Email</td>
+                        <td>@manager.Department</td>
+                        <td>
+                            @if (manager.IsManager)
+                            {
+                                <span class="badge bg-success">כן</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-secondary">לא</span>
+                            }
+                        </td>
+                        <td>
+                            @if (manager.IsAdmin)
+                            {
+                                <span class="badge bg-danger">כן</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-secondary">לא</span>
+                            }
+                        </td>
+                        <td>@manager.CreatedAt.ToString("dd/MM/yyyy")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+else
+{
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle"></i> אין מנהלים במערכת
+    </div>
+}
+

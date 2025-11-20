@@ -1,0 +1,57 @@
+@{
+    ViewData["Title"] = "בית";
+}
+
+<div class="row">
+    <div class="col-md-12">
+        <h1 class="mb-4">ברוך הבא למערכת הרשאות</h1>
+        <p class="lead">מערכת מקצועית לניהול בקשות הרשאות גישה למערכות</p>
+    </div>
+</div>
+
+<div class="row mt-5">
+    <div class="col-md-4 mb-4">
+        <div class="card h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-plus-circle display-4 text-primary mb-3"></i>
+                <h5 class="card-title">בקשה חדשה</h5>
+                <p class="card-text">צור בקשה חדשה להרשאות גישה למערכות</p>
+                <a asp-controller="Requests" asp-action="Create" class="btn btn-primary">
+                    <i class="bi bi-plus-circle"></i> בקשה חדשה
+                </a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-4">
+        <div class="card h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-list-ul display-4 text-success mb-3"></i>
+                <h5 class="card-title">הבקשות שלי</h5>
+                <p class="card-text">צפה ועקוב אחר בקשות ההרשאה שלך</p>
+                <a asp-controller="Requests" asp-action="Index" class="btn btn-success">
+                    <i class="bi bi-list-ul"></i> צפה בבקשות
+                </a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4 mb-4">
+        <div class="card h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-gear display-4 text-warning mb-3"></i>
+                <h5 class="card-title">ניהול</h5>
+                <p class="card-text">גישה לניהול המערכת (למנהלים בלבד)</p>
+                @if (User.IsInRole("Admin") || User.IsInRole("Manager"))
+                {
+                    <a asp-controller="Admin" asp-action="Index" class="btn btn-warning">
+                        <i class="bi bi-gear"></i> ניהול
+                    </a>
+                }
+                else
+                {
+                    <button class="btn btn-warning" disabled>אין גישה</button>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
