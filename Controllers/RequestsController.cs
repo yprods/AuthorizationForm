@@ -39,7 +39,8 @@ namespace AuthorizationForm.Controllers
             _logger = logger;
         }
 
-        // Search AD Users - API endpoint for auto-complete
+        // Search Users (Local DB + AD) - API endpoint for auto-complete
+        // Works offline - searches local database first, then AD if available
         [HttpGet]
         [Route("Requests/SearchAdUsers")]
         [AllowAnonymous] // Allow anonymous for testing, can be restricted later
@@ -53,45 +54,87 @@ namespace AuthorizationForm.Controllers
                 return Json(new List<object>());
             }
 
+            var allResults = new List<object>();
+            
+            // Step 1: Search in local database FIRST (always works, even offline)
             try
             {
-                _logger.LogInformation($"Calling AD service to search for users with term: {term}");
-                var users = await _adService.SearchUsersAsync(term, maxResults);
-                _logger.LogInformation($"AD service returned {users?.Count ?? 0} users");
-                
-                if (users == null)
+                _logger.LogInformation($"Searching local database for users with term: {term}");
+                var localUsers = await _context.Users
+                    .Where(u => 
+                        (u.UserName != null && u.UserName.Contains(term)) ||
+                        (u.FullName != null && u.FullName.Contains(term)) ||
+                        (u.Email != null && u.Email.Contains(term)))
+                    .Where(u => u.IsManager || u.IsAdmin) // Only managers and admins
+                    .Take(maxResults)
+                    .ToListAsync();
+
+                var localResults = localUsers.Select(u => new
                 {
-                    _logger.LogWarning("AD service returned null - returning empty list");
-                    return Json(new List<object>());
-                }
-                
-                var results = users.Select(u => new
-                {
-                    username = u.Username ?? "",
-                    fullName = u.FullName ?? "",
+                    username = u.UserName ?? "",
+                    fullName = u.FullName ?? u.UserName ?? "",
                     email = u.Email ?? "",
                     department = u.Department ?? "",
-                    title = u.Title ?? ""
+                    title = "",
+                    isLocal = true,
+                    userId = u.Id
                 }).ToList();
 
-                _logger.LogInformation($"Returning {results.Count} results to client");
-                
-                // Return proper JSON response
-                Response.ContentType = "application/json; charset=utf-8";
-                return Json(results);
+                allResults.AddRange(localResults);
+                _logger.LogInformation($"Found {localResults.Count} users in local database");
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Error searching AD users - Term: {term}, Error: {ex.Message}, StackTrace: {ex.StackTrace}");
-                
-                // Return error as JSON but don't crash - return empty list with warning in response
-                Response.ContentType = "application/json; charset=utf-8";
-                
-                // Return empty list instead of error object - UI will show "לא נמצאו תוצאות"
-                // Log error for admin review
-                _logger.LogWarning($"Returning empty list due to AD search error: {ex.Message}");
-                return Json(new List<object>());
+                _logger.LogWarning(ex, $"Error searching local database: {ex.Message}");
+                // Continue - try AD anyway
             }
+
+            // Step 2: Try to search in Active Directory (if available and online)
+            // This is optional - if AD fails, we still return local DB results
+            try
+            {
+                _logger.LogInformation($"Attempting AD search for users with term: {term}");
+                var adUsers = await _adService.SearchUsersAsync(term, maxResults);
+                _logger.LogInformation($"AD service returned {adUsers?.Count ?? 0} users");
+                
+                if (adUsers != null && adUsers.Any())
+                {
+                    // Filter out users that are already in local database (avoid duplicates)
+                    var existingUsernames = allResults.Select(r => 
+                    {
+                        var obj = r as dynamic;
+                        return obj?.username?.ToString().ToLower() ?? "";
+                    }).Where(u => !string.IsNullOrEmpty(u)).ToHashSet();
+                    
+                    var adResults = adUsers
+                        .Where(ad => !string.IsNullOrEmpty(ad.Username) && !existingUsernames.Contains(ad.Username.ToLower()))
+                        .Take(maxResults - allResults.Count)
+                        .Select(u => new
+                        {
+                            username = u.Username ?? "",
+                            fullName = u.FullName ?? "",
+                            email = u.Email ?? "",
+                            department = u.Department ?? "",
+                            title = u.Title ?? "",
+                            isLocal = false,
+                            userId = (string?)null
+                        }).ToList();
+
+                    allResults.AddRange(adResults);
+                    _logger.LogInformation($"Added {adResults.Count} users from AD");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, $"AD search failed (may be offline or not configured): {ex.Message}. Continuing with local database results only.");
+                // Continue - we already have local database results, so we're good!
+            }
+
+            _logger.LogInformation($"Returning {allResults.Count} total results to client ({allResults.Count(r => (r as dynamic)?.isLocal == true)} local + {allResults.Count(r => (r as dynamic)?.isLocal == false)} AD)");
+            
+            // Return proper JSON response
+            Response.ContentType = "application/json; charset=utf-8";
+            return Json(allResults.Take(maxResults).ToList());
         }
 
         // GET: Requests

@@ -108,7 +108,7 @@
                 </label>
                 <div class="search-wrapper position-relative">
                     <i class="bi bi-search position-absolute" style="right: 15px; top: 50%; transform: translateY(-50%); color: #6c757d; z-index: 10;"></i>
-                    <input type="text" id="managerSearch" class="form-control" placeholder="חפש מנהל ב-Active Directory (התחל להקליד שם)..." autocomplete="off" />
+                    <input type="text" id="managerSearch" class="form-control" placeholder="חפש מנהל (התחל להקליד שם)..." autocomplete="off" />
                     <div class="autocomplete-dropdown" style="display: none;"></div>
                 </div>
                 <select asp-for="ManagerId" class="form-select mt-2" id="managerSelect" required>
@@ -124,7 +124,7 @@
                 <input type="hidden" id="selectedManagerId" name="ManagerId" />
                 <div class="mt-2">
                     <small class="text-muted">
-                        <i class="bi bi-info-circle"></i> ניתן לחפש מנהלים מ-Active Directory בזמן אמת. לחץ על משתמש מהרשימה כדי לבחור.
+                        <i class="bi bi-info-circle"></i> החיפוש מחפש במסד הנתונים המקומי ובמידת הצורך גם ב-Active Directory. לחץ על משתמש מהרשימה כדי לבחור.
                     </small>
                 </div>
                 <span asp-validation-for="ManagerId" class="text-danger"></span>
@@ -166,17 +166,156 @@
                 });
             });
 
-            // Manager search
-            $('#managerSearch').on('keyup', function() {
-                var value = $(this).val().toLowerCase();
-                $('#managerSelect option').each(function() {
-                    var text = $(this).text().toLowerCase();
-                    if (text.indexOf(value) > -1 || value === '') {
-                        $(this).show();
-                    } else {
-                        $(this).hide();
+            // Manager search with Active Directory auto-complete (works offline - local DB first)
+            let searchTimeout;
+            let currentResults = [];
+            let dropdown = $('.autocomplete-dropdown');
+
+            $('#managerSearch').on('input', function() {
+                clearTimeout(searchTimeout);
+                var value = $(this).val().trim();
+
+                if (value.length < 2) {
+                    dropdown.hide();
+                    currentResults = [];
+                    return;
+                }
+
+                // Debounce search
+                searchTimeout = setTimeout(function() {
+                    searchUsers(value);
+                }, 300);
+            });
+
+            function searchUsers(term) {
+                var input = $('#managerSearch');
+                if (dropdown.length === 0) {
+                    input.parent().append('<div class="autocomplete-dropdown"></div>');
+                    dropdown = $('.autocomplete-dropdown');
+                }
+
+                // Show loading
+                dropdown.html('<div class="autocomplete-item text-center p-3"><div class="spinner-border spinner-border-sm" role="status"></div> טוען...</div>').show();
+
+                console.log('Searching users for term:', term);
+
+                $.ajax({
+                    url: '/Requests/SearchAdUsers',
+                    method: 'GET',
+                    data: { term: term, maxResults: 15 },
+                    timeout: 10000,
+                    success: function(users) {
+                        console.log('Search results:', users);
+                        
+                        if (users && Array.isArray(users)) {
+                            currentResults = users.filter(function(u) {
+                                return u && !u.error && u.username;
+                            });
+                        } else {
+                            currentResults = [];
+                        }
+                        
+                        renderAutocomplete(currentResults);
+                    },
+                    error: function(xhr, status, error) {
+                        console.error('Search error:', status, error, xhr);
+                        var errorMsg = 'שגיאה בחיפוש משתמשים';
+                        if (xhr.responseJSON && xhr.responseJSON.error) {
+                            errorMsg = xhr.responseJSON.error;
+                        }
+                        dropdown.html('<div class="autocomplete-item text-danger"><i class="bi bi-exclamation-triangle"></i> ' + errorMsg + '</div>');
                     }
                 });
+            }
+
+            function renderAutocomplete(users) {
+                var dropdown = $('.autocomplete-dropdown');
+                
+                if (users.length === 0) {
+                    dropdown.html('<div class="autocomplete-item text-muted"><i class="bi bi-info-circle"></i> לא נמצאו תוצאות</div>').show();
+                    return;
+                }
+                
+                var html = users.map(function(user, index) {
+                    var isLocal = user.isLocal === true;
+                    var badge = isLocal ? '<span class="badge bg-success ms-2">מקומי</span>' : '<span class="badge bg-primary ms-2">AD</span>';
+                    return `<div class="autocomplete-item" data-index="${index}" data-username="${user.username}" data-user-id="${user.userId || ''}" data-is-local="${isLocal}">
+                        <strong>${user.fullName}</strong> ${badge}
+                        ${user.email ? '<br><small class="text-muted"><i class="bi bi-envelope"></i> ' + user.email + '</small>' : ''}
+                        ${user.department ? '<br><small class="text-muted"><i class="bi bi-building"></i> ' + user.department + '</small>' : ''}
+                    </div>`;
+                }).join('');
+                
+                dropdown.html(html).show();
+            }
+
+            // Handle autocomplete selection
+            $(document).on('click', '.autocomplete-item', function(e) {
+                e.stopPropagation();
+                var index = $(this).data('index');
+                var user = currentResults[index];
+                
+                if (user && !$(this).hasClass('text-danger') && !$(this).hasClass('text-muted')) {
+                    $('#managerSearch').val(user.fullName + (user.email ? ' - ' + user.email : ''));
+                    $('.autocomplete-dropdown').hide();
+                    
+                    var select = $('#managerSelect');
+                    
+                    // If user has userId (from local DB), use it directly
+                    if (user.userId && user.isLocal) {
+                        var option = select.find(`option[value="${user.userId}"]`);
+                        if (option.length > 0) {
+                            select.val(user.userId);
+                            select.show();
+                            $('.import-user-message').remove();
+                            return;
+                        }
+                    }
+                    
+                    // Try to find by username
+                    var option = select.find(`option[data-username="${user.username}"]`);
+                    
+                    if (option.length > 0) {
+                        select.val(option.val());
+                        select.show();
+                        $('.import-user-message').remove();
+                    } else {
+                        // Add user to dropdown
+                        var valueToUse = user.userId || user.username;
+                        var newOption = $('<option></option>')
+                            .attr('value', valueToUse)
+                            .attr('data-username', user.username)
+                            .attr('data-temp', user.isLocal ? 'false' : 'true')
+                            .text(user.fullName + (user.email ? ' - ' + user.email : ''));
+                        
+                        select.append(newOption);
+                        select.val(valueToUse);
+                        select.show();
+                        
+                        if (!user.isLocal) {
+                            $('.import-user-message').remove();
+                            select.after('<div class="alert alert-info import-user-message mt-2"><i class="bi bi-info-circle"></i> משתמש זה מ-Active Directory. אם הוא לא במערכת, הוא יתווסף בעת שליחת הבקשה.</div>');
+                        } else {
+                            $('.import-user-message').remove();
+                        }
+                    }
+                }
+            });
+
+            // Hide dropdown when clicking outside
+            $(document).on('click', function(e) {
+                if (!$(e.target).closest('#managerSearch, .autocomplete-dropdown').length) {
+                    $('.autocomplete-dropdown').hide();
+                }
+            });
+
+            // Sync managerSearch with ManagerId when user selects from dropdown
+            $('#managerSelect').on('change', function() {
+                var selectedOption = $(this).find('option:selected');
+                if (selectedOption.val() && selectedOption.val() !== '') {
+                    var displayText = selectedOption.text();
+                    $('#managerSearch').val(displayText);
+                }
             });
 
             // Form validation

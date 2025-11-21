@@ -108,16 +108,18 @@ $(document).ready(function() {
             var dropdown = $('.autocomplete-dropdown');
             
             if (users.length === 0) {
-                dropdown.html('<div class="autocomplete-item text-muted">לא נמצאו תוצאות</div>').show();
+                dropdown.html('<div class="autocomplete-item text-muted"><i class="bi bi-info-circle"></i> לא נמצאו תוצאות</div>').show();
                 return;
             }
             
             var html = users.map(function(user, index) {
+                var isLocal = user.isLocal === true;
+                var badge = isLocal ? '<span class="badge bg-success ms-2">מקומי</span>' : '<span class="badge bg-primary ms-2">AD</span>';
                 var display = `${user.fullName}${user.email ? ' - ' + user.email : ''}${user.department ? ' (' + user.department + ')' : ''}`;
-                return `<div class="autocomplete-item" data-index="${index}" data-username="${user.username}">
-                    <strong>${user.fullName}</strong>
-                    ${user.email ? '<br><small class="text-muted">' + user.email + '</small>' : ''}
-                    ${user.department ? '<br><small class="text-muted">' + user.department + '</small>' : ''}
+                return `<div class="autocomplete-item" data-index="${index}" data-username="${user.username}" data-user-id="${user.userId || ''}" data-is-local="${isLocal}">
+                    <strong>${user.fullName}</strong> ${badge}
+                    ${user.email ? '<br><small class="text-muted"><i class="bi bi-envelope"></i> ' + user.email + '</small>' : ''}
+                    ${user.department ? '<br><small class="text-muted"><i class="bi bi-building"></i> ' + user.department + '</small>' : ''}
                 </div>`;
             }).join('');
             
@@ -135,33 +137,54 @@ $(document).ready(function() {
                 $('#managerSearch').val(user.fullName + (user.email ? ' - ' + user.email : ''));
                 $('.autocomplete-dropdown').hide();
                 
-                // Find matching option in select or create one
+                // Find matching option in select
                 var select = $('#managerSelect');
+                
+                // If user has userId (from local DB), use it directly
+                if (user.userId && user.isLocal) {
+                    var option = select.find(`option[value="${user.userId}"]`);
+                    if (option.length > 0) {
+                        select.val(user.userId);
+                        select.show(); // Show select if hidden
+                        $('#selectedManagerId').val(user.userId);
+                        $('.import-user-message').remove(); // Remove any previous messages
+                        return;
+                    }
+                }
+                
+                // Try to find by username in existing options
                 var option = select.find(`option[data-username="${user.username}"]`);
                 
                 if (option.length > 0) {
-                    // User exists in system - select it
+                    // User exists in dropdown - select it
                     select.val(option.val());
+                    select.show();
                     $('#selectedManagerId').val(option.val());
+                    $('.import-user-message').remove();
                 } else {
-                    // User doesn't exist - we need to import or use username
-                    // Try to find by username pattern or add a temporary option
-                    console.log('User not found in system, username:', user.username);
+                    // User not in dropdown - add it
+                    console.log('Adding user to dropdown:', user);
                     
-                    // Add temporary option
-                    var tempOption = $('<option></option>')
-                        .attr('value', user.username)
+                    var valueToUse = user.userId || user.username;
+                    
+                    // Add option to select
+                    var newOption = $('<option></option>')
+                        .attr('value', valueToUse)
                         .attr('data-username', user.username)
-                        .attr('data-temp', 'true')
+                        .attr('data-temp', user.isLocal ? 'false' : 'true')
                         .text(user.fullName + (user.email ? ' - ' + user.email : ''));
                     
-                    select.append(tempOption);
-                    select.val(user.username);
-                    $('#selectedManagerId').val(user.username);
+                    select.append(newOption);
+                    select.val(valueToUse);
+                    select.show();
+                    $('#selectedManagerId').val(valueToUse);
                     
-                    // Show info message
-                    if ($('.import-user-message').length === 0) {
-                        select.after('<div class="alert alert-info import-user-message mt-2"><i class="bi bi-info-circle"></i> משתמש זה אינו במערכת. הוא יתווסף בעת שליחת הבקשה.</div>');
+                    // Show info message only for AD users (not local)
+                    if (!user.isLocal) {
+                        $('.import-user-message').remove();
+                        select.after('<div class="alert alert-info import-user-message mt-2"><i class="bi bi-info-circle"></i> משתמש זה מ-Active Directory. אם הוא לא במערכת, הוא יתווסף בעת שליחת הבקשה.</div>');
+                    } else {
+                        $('.import-user-message').remove();
                     }
                 }
             }

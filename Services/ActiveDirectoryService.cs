@@ -259,9 +259,9 @@ namespace AuthorizationForm.Services
                 
                 if (string.IsNullOrWhiteSpace(ldapPath) || ldapPath.Contains("yourdomain.com"))
                 {
-                    _logger.LogWarning($"LdapPath is not properly configured in appsettings.json. Current value: {ldapPath}");
+                    _logger.LogInformation($"LdapPath is not configured - skipping AD search (offline mode). This is normal if working without domain.");
                     // Don't throw exception - return empty list so UI doesn't break
-                    // Log warning for admin to configure
+                    // Application will continue with local database search only
                     return new List<ADUserInfo>();
                 }
                 
