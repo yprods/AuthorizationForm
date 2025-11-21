@@ -81,6 +81,40 @@ builder.Services.AddAuthentication(options =>
     options.SlidingExpiration = true;
     options.Cookie.HttpOnly = true;
     options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+    
+    // Important: Configure cookie events to include roles in claims
+    options.Events = new Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationEvents
+    {
+        OnSigningIn = async context =>
+        {
+            // Get user from principal
+            var userId = context.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!string.IsNullOrEmpty(userId))
+            {
+                using var scope = context.HttpContext.RequestServices.CreateScope();
+                var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+                var user = await userManager.FindByIdAsync(userId);
+                
+                if (user != null)
+                {
+                    // Get user roles and add them as claims
+                    var roles = await userManager.GetRolesAsync(user);
+                    var identity = (ClaimsIdentity)context.Principal!.Identity!;
+                    
+                    foreach (var role in roles)
+                    {
+                        identity.AddClaim(new Claim(ClaimTypes.Role, role));
+                    }
+                    
+                    // Add full name claim if available
+                    if (!string.IsNullOrEmpty(user.FullName))
+                    {
+                        identity.AddClaim(new Claim("FullName", user.FullName));
+                    }
+                }
+            }
+        }
+    };
 });
 
 // Allow anonymous access - only specific pages require authentication
