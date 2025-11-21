@@ -4,12 +4,11 @@ namespace AuthorizationForm.Models
 {
     public class LoginViewModel
     {
-        [Required]
-        [EmailAddress]
-        [Display(Name = "אימייל")]
-        public string Email { get; set; } = string.Empty;
+        [Required(ErrorMessage = "שדה שם משתמש הוא חובה")]
+        [Display(Name = "שם משתמש")]
+        public string Email { get; set; } = string.Empty; // Can be username or email
 
-        [Required]
+        [Required(ErrorMessage = "שדה סיסמה הוא חובה")]
         [DataType(DataType.Password)]
         [Display(Name = "סיסמא")]
         public string Password { get; set; } = string.Empty;

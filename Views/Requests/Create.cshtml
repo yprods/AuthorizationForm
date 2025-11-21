@@ -103,20 +103,30 @@
     <div class="row">
         <div class="col-md-6">
             <div class="form-group mb-3">
-                <label asp-for="ManagerId" class="form-label"></label>
-                <div class="mb-2">
-                    <input type="text" id="managerSearch" class="form-control" placeholder="חפש מנהל..." />
+                <label asp-for="ManagerId" class="form-label">
+                    <strong>מנהל אחראי</strong> <span class="text-danger">*</span>
+                </label>
+                <div class="search-wrapper position-relative">
+                    <i class="bi bi-search position-absolute" style="right: 15px; top: 50%; transform: translateY(-50%); color: #6c757d; z-index: 10;"></i>
+                    <input type="text" id="managerSearch" class="form-control" placeholder="חפש מנהל ב-Active Directory (התחל להקליד שם)..." autocomplete="off" />
+                    <div class="autocomplete-dropdown" style="display: none;"></div>
                 </div>
-                <select asp-for="ManagerId" class="form-select" id="managerSelect">
-                    <option value="">בחר מנהל אחראי</option>
+                <select asp-for="ManagerId" class="form-select mt-2" id="managerSelect" required>
+                    <option value="">-- בחר מנהל אחראי --</option>
                     @if (managers != null)
                     {
                         @foreach (var manager in managers)
                         {
-                            <option value="@manager.Id" data-name="@manager.FullName">@manager.FullName - @manager.Email</option>
+                            <option value="@manager.Id" data-name="@manager.FullName" data-username="@manager.UserName">@manager.FullName - @manager.Email</option>
                         }
                     }
                 </select>
+                <input type="hidden" id="selectedManagerId" name="ManagerId" />
+                <div class="mt-2">
+                    <small class="text-muted">
+                        <i class="bi bi-info-circle"></i> ניתן לחפש מנהלים מ-Active Directory בזמן אמת. לחץ על משתמש מהרשימה כדי לבחור.
+                    </small>
+                </div>
                 <span asp-validation-for="ManagerId" class="text-danger"></span>
             </div>
         </div>

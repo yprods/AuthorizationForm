@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace AuthorizationForm.Controllers
 {
-    [Authorize]
+    [AllowAnonymous] // Allow anonymous access to home page
     public class HomeController : Controller
     {
         public IActionResult Index()

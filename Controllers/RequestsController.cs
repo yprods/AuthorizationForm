@@ -19,6 +19,7 @@ namespace AuthorizationForm.Controllers
         private readonly IPdfService _pdfService;
         private readonly Services.IAuthorizationService _authorizationService;
         private readonly IActiveDirectoryService _adService;
+        private readonly ILogger<RequestsController> _logger;
 
         public RequestsController(
             ApplicationDbContext context,
@@ -26,7 +27,8 @@ namespace AuthorizationForm.Controllers
             IEmailService emailService,
             IPdfService pdfService,
             Services.IAuthorizationService authorizationService,
-            IActiveDirectoryService adService)
+            IActiveDirectoryService adService,
+            ILogger<RequestsController> logger)
         {
             _context = context;
             _userManager = userManager;
@@ -34,6 +36,62 @@ namespace AuthorizationForm.Controllers
             _pdfService = pdfService;
             _authorizationService = authorizationService;
             _adService = adService;
+            _logger = logger;
+        }
+
+        // Search AD Users - API endpoint for auto-complete
+        [HttpGet]
+        [Route("Requests/SearchAdUsers")]
+        [AllowAnonymous] // Allow anonymous for testing, can be restricted later
+        public async Task<IActionResult> SearchAdUsers(string term, int maxResults = 20)
+        {
+            _logger.LogInformation($"SearchAdUsers API called with term: '{term}', maxResults: {maxResults}");
+            
+            if (string.IsNullOrWhiteSpace(term) || term.Length < 2)
+            {
+                _logger.LogDebug("Search term too short, returning empty results");
+                return Json(new List<object>());
+            }
+
+            try
+            {
+                _logger.LogInformation($"Calling AD service to search for users with term: {term}");
+                var users = await _adService.SearchUsersAsync(term, maxResults);
+                _logger.LogInformation($"AD service returned {users?.Count ?? 0} users");
+                
+                if (users == null)
+                {
+                    _logger.LogWarning("AD service returned null - returning empty list");
+                    return Json(new List<object>());
+                }
+                
+                var results = users.Select(u => new
+                {
+                    username = u.Username ?? "",
+                    fullName = u.FullName ?? "",
+                    email = u.Email ?? "",
+                    department = u.Department ?? "",
+                    title = u.Title ?? ""
+                }).ToList();
+
+                _logger.LogInformation($"Returning {results.Count} results to client");
+                
+                // Return proper JSON response
+                Response.ContentType = "application/json; charset=utf-8";
+                return Json(results);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error searching AD users - Term: {term}, Error: {ex.Message}, StackTrace: {ex.StackTrace}");
+                
+                // Return error as JSON but don't crash - return empty list with warning in response
+                Response.ContentType = "application/json; charset=utf-8";
+                
+                // Return empty list instead of error object - UI will show "לא נמצאו תוצאות"
+                // Log error for admin review
+                _logger.LogWarning($"Returning empty list due to AD search error: {ex.Message}");
+                return Json(new List<object>());
+            }
         }
 
         // GET: Requests

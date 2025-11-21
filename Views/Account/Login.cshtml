@@ -1,6 +1,46 @@
 @model LoginViewModel
 @{
     ViewData["Title"] = "התחברות";
+    var isWindowsAuth = false;
+    if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
+    {
+        try
+        {
+            var windowsIdentity = User.Identity as System.Security.Principal.WindowsIdentity;
+            isWindowsAuth = windowsIdentity != null && windowsIdentity.IsAuthenticated;
+        }
+        catch (PlatformNotSupportedException)
+        {
+            isWindowsAuth = false;
+        }
+    }
+    var showManualLogin = ViewData["ShowManualLogin"] as bool? ?? false;
+    var isSignedIn = User.Identity?.IsAuthenticated == true;
+}
+
+@if (isWindowsAuth && !isSignedIn)
+{
+    <div class="text-center mt-5">
+        <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+            <span class="visually-hidden">טוען...</span>
+        </div>
+        <p class="mt-3">מזוהה עם Windows Authentication... מתחבר אוטומטית</p>
+    </div>
+    <script>
+        // Redirect immediately if Windows Auth detected
+        setTimeout(function() {
+            window.location.href = '/';
+        }, 500);
+    </script>
+    return; // Exit view early if Windows Auth detected
+}
+
+@if (isSignedIn)
+{
+    <script>
+        window.location.href = '/';
+    </script>
+    return; // Exit view early if already signed in
 }
 
 <div class="row justify-content-center">
@@ -10,28 +50,66 @@
                 <h3><i class="bi bi-box-arrow-in-right"></i> התחברות למערכת</h3>
             </div>
             <div class="card-body">
-                <form asp-action="Login" method="post">
-                    <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+                @if (isWindowsAuth)
+                {
+                    <div class="alert alert-success mb-3 text-center">
+                        <i class="bi bi-check-circle"></i> <strong>מזוהה עם Windows Authentication</strong>
+                        <p class="mb-0">מתחבר אוטומטית...</p>
+                        <div class="spinner-border spinner-border-sm mt-2" role="status">
+                            <span class="visually-hidden">טוען...</span>
+                        </div>
+                    </div>
+                    <script>
+                        setTimeout(function() {
+                            window.location.href = '/';
+                        }, 1000);
+                    </script>
+                }
+                else if (showManualLogin)
+                {
+                    <div class="alert alert-warning mb-3">
+                        <i class="bi bi-exclamation-triangle"></i> <strong>התחברות ידנית נדרשת</strong>
+                        <p class="mb-0 small">Windows Authentication לא זמין. אנא מלא את כל השדות להלן על מנת להתחבר למערכת</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="alert alert-info mb-3">
+                        <i class="bi bi-info-circle"></i> <strong>ממתין לאימות Windows...</strong>
+                        <p class="mb-0 small">אם האימות נכשל, השתמש בטופס למטה</p>
+                    </div>
+                }
+
+                <form asp-action="Login" method="post" id="loginForm" style="@(isWindowsAuth ? "display:none;" : "")">
+                    <div asp-validation-summary="All" class="text-danger alert alert-danger"></div>
                     <div class="form-group mb-3">
-                        <label asp-for="Email" class="form-label"></label>
-                        <input asp-for="Email" class="form-control" placeholder="הכנס אימייל" />
+                        <label asp-for="Email" class="form-label">
+                            <strong>@Html.DisplayNameFor(m => m.Email)</strong> <span class="text-danger">*</span>
+                        </label>
+                        <input asp-for="Email" class="form-control" placeholder="הכנס שם משתמש או אימייל" required autocomplete="username" />
                         <span asp-validation-for="Email" class="text-danger"></span>
+                        <small class="form-text text-muted">ניתן להכניס שם משתמש או כתובת אימייל</small>
                     </div>
                     <div class="form-group mb-3">
-                        <label asp-for="Password" class="form-label"></label>
-                        <input asp-for="Password" class="form-control" placeholder="הכנס סיסמא" />
+                        <label asp-for="Password" class="form-label">
+                            <strong>@Html.DisplayNameFor(m => m.Password)</strong> <span class="text-danger">*</span>
+                        </label>
+                        <input asp-for="Password" class="form-control" placeholder="הכנס סיסמא" required autocomplete="current-password" />
                         <span asp-validation-for="Password" class="text-danger"></span>
                     </div>
                     <div class="form-check mb-3">
-                        <input asp-for="RememberMe" class="form-check-input" />
-                        <label asp-for="RememberMe" class="form-check-label"></label>
+                        <input asp-for="RememberMe" class="form-check-input" id="RememberMe" />
+                        <label asp-for="RememberMe" class="form-check-label" for="RememberMe"></label>
                     </div>
                     <div class="d-grid">
-                        <button type="submit" class="btn btn-primary">
+                        <button type="submit" class="btn btn-primary btn-lg">
                             <i class="bi bi-box-arrow-in-right"></i> התחבר
                         </button>
                     </div>
                 </form>
+            </div>
+            <div class="card-footer text-center text-muted small">
+                <i class="bi bi-shield-check"></i> התחברות מאובטחת
             </div>
         </div>
     </div>
@@ -39,5 +117,47 @@
 
 @section Scripts {
     @{await Html.RenderPartialAsync("_ValidationScriptsPartial");}
+    <script>
+        $(document).ready(function() {
+            // Client-side validation - ensure all required fields are filled
+            $('#loginForm').on('submit', function(e) {
+                var email = $('#Email').val().trim();
+                var password = $('#Password').val().trim();
+                
+                if (!email || !password) {
+                    e.preventDefault();
+                    alert('אנא מלא את כל השדות החובה (אימייל וסיסמה)');
+                    return false;
+                }
+
+                // Email validation is optional - can be username or email
+                // if (!isValidEmail(email)) {
+                //     e.preventDefault();
+                //     alert('אנא הכנס כתובת אימייל תקינה');
+                //     return false;
+                // }
+
+                if (password.length < 6) {
+                    e.preventDefault();
+                    alert('הסיסמה חייבת להכיל לפחות 6 תווים');
+                    return false;
+                }
+            });
+
+            function isValidEmail(email) {
+                var re = /^[^\s@@]+@@[^\s@@]+\.[^\s@@]+$/;
+                return re.test(email);
+            }
+
+            // Highlight required fields
+            $('input[required]').on('blur', function() {
+                if ($(this).val().trim() === '') {
+                    $(this).addClass('is-invalid');
+                } else {
+                    $(this).removeClass('is-invalid');
+                }
+            });
+        });
+    </script>
 }
 

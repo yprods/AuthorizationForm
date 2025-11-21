@@ -1,10 +1,15 @@
 using AuthorizationForm.Data;
 using AuthorizationForm.Models;
 using AuthorizationForm.Services;
+using AuthorizationForm.Middleware;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using System.Security.Claims;
+using System.Runtime.InteropServices;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Caching.Memory;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -27,23 +32,81 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
 .AddEntityFrameworkStores<ApplicationDbContext>()
 .AddDefaultTokenProviders();
 
-// Configure Authentication
-builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
-    .AddCookie(options =>
+// Configure Authentication - Windows Authentication with Cookie fallback
+builder.Services.AddAuthentication(options =>
+{
+    // Use Cookies as default, Negotiate (Windows Auth) only when available
+    options.DefaultScheme = "Cookies";
+    options.DefaultChallengeScheme = "Cookies";
+    options.DefaultSignInScheme = "Cookies";
+    options.DefaultAuthenticateScheme = "Cookies";
+})
+.AddNegotiate("Negotiate", options =>
+{
+    // Configure Windows Authentication - optional, only if available
+    if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
     {
-        options.LoginPath = "/Account/Login";
-        options.AccessDeniedPath = "/Account/AccessDenied";
-    });
+        options.PersistKerberosCredentials = true;
+        options.PersistNtlmCredentials = true;
+        // Allow anonymous access if Windows Auth fails
+        options.Events = new Microsoft.AspNetCore.Authentication.Negotiate.NegotiateEvents
+        {
+            OnChallenge = context =>
+            {
+                // If Windows Auth challenge fails, allow anonymous (middleware will handle manual login)
+                var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
+                logger.LogInformation("Windows Auth challenge failed, allowing anonymous access");
+                return Task.CompletedTask;
+            },
+            OnAuthenticated = context =>
+            {
+                // Log successful authentication
+                var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<Program>>();
+                logger.LogInformation($"Windows Authentication succeeded for: {context.Principal?.Identity?.Name}");
+                return Task.CompletedTask;
+            }
+        };
+    }
+})
+.AddCookie("Cookies", options =>
+{
+    options.LoginPath = "/Account/Login";
+    options.AccessDeniedPath = "/Account/AccessDenied";
+    options.ExpireTimeSpan = TimeSpan.FromDays(30);
+    options.SlidingExpiration = true;
+    options.Cookie.HttpOnly = true;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+});
+
+// Allow anonymous access - only specific pages require authentication
+builder.Services.AddAuthorization(options =>
+{
+    // No fallback policy - allow anonymous access by default
+    // Use [Authorize] attribute on specific controllers/actions that need authentication
+});
+
+// Add memory cache for AD queries
+builder.Services.AddMemoryCache();
 
 // Add custom services
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IPdfService, PdfService>();
-builder.Services.AddScoped<IActiveDirectoryService, ActiveDirectoryService>();
+// Register base AD service
+builder.Services.AddScoped<ActiveDirectoryService>();
+// Register cached wrapper
+builder.Services.AddScoped<IActiveDirectoryService>(sp =>
+{
+    var adService = sp.GetRequiredService<ActiveDirectoryService>();
+    var cache = sp.GetRequiredService<IMemoryCache>();
+    var logger = sp.GetRequiredService<ILogger<CachedActiveDirectoryService>>();
+    return new CachedActiveDirectoryService(adService, cache, logger);
+});
 builder.Services.AddScoped<IAuthorizationService, AuthorizationService>();
 
 // Configure Email
 builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection("EmailSettings"));
 builder.Services.Configure<ActiveDirectorySettings>(builder.Configuration.GetSection("ActiveDirectory"));
+builder.Services.Configure<AdminSettings>(builder.Configuration.GetSection("AdminSettings"));
 
 // Add session
 builder.Services.AddSession(options =>
@@ -68,6 +131,7 @@ app.UseStaticFiles();
 app.UseRouting();
 
 app.UseAuthentication();
+app.UseAutoLogin(); // Auto-login via Windows Authentication (must be after UseAuthentication)
 app.UseAuthorization();
 app.UseSession();
 
@@ -82,25 +146,40 @@ app.UseRequestLocalization(options =>
     options.AddSupportedUICultures(supportedUICultures);
 });
 
+// Map API controllers first (for attribute routing like [Route])
+app.MapControllers();
+
+// Map default MVC routes
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");
+
+// Ensure Account/Login allows anonymous access
+app.MapControllerRoute(
+    name: "login",
+    pattern: "Account/Login",
+    defaults: new { controller = "Account", action = "Login" });
 
 // Seed database
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
+    var logger = services.GetRequiredService<ILogger<Program>>();
     try
     {
+        logger.LogInformation("Starting database initialization...");
         var context = services.GetRequiredService<ApplicationDbContext>();
         var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
         var roleManager = services.GetRequiredService<RoleManager<IdentityRole>>();
-        DbInitializer.Initialize(context, userManager, roleManager);
+        var adminSettings = services.GetRequiredService<IOptions<AdminSettings>>();
+        DbInitializer.Initialize(context, userManager, roleManager, adminSettings);
+        logger.LogInformation("Database initialization completed successfully.");
     }
     catch (Exception ex)
     {
-        var logger = services.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "An error occurred seeding the DB.");
+        logger.LogError(ex, "An error occurred seeding the DB. Application will continue but database may not be properly initialized. Error: {Message}", ex.Message);
+        // Don't crash the application - log and continue
+        // The database will be created on first access if needed
     }
 }
 

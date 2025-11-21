@@ -1,0 +1,106 @@
+@{
+    ViewData["Title"] = "ייבוא משתמשים מאקטיב דירקטורי";
+}
+
+<h2><i class="bi bi-people"></i> ייבוא משתמשים מאקטיב דירקטורי</h2>
+<hr />
+
+@if (TempData["Success"] != null)
+{
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <i class="bi bi-check-circle"></i> @TempData["Success"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+}
+
+@if (TempData["Error"] != null)
+{
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        <i class="bi bi-exclamation-triangle"></i> @TempData["Error"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+}
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5><i class="bi bi-person-plus"></i> ייבוא משתמש לפי שם משתמש</h5>
+            </div>
+            <div class="card-body">
+                <form asp-action="ImportUserByUsername" method="post">
+                    @Html.AntiForgeryToken()
+                    <div class="form-group mb-3">
+                        <label class="form-label">שם משתמש (Active Directory)</label>
+                        <input type="text" name="username" class="form-control" placeholder="הכנס שם משתמש" required />
+                        <small class="form-text text-muted">הכנס שם משתמש מאקטיב דירקטורי (sAMAccountName)</small>
+                    </div>
+                    <div class="form-group">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-download"></i> ייבא משתמש
+                        </button>
+                    </div>
+                </form>
+                <div class="alert alert-info mt-3">
+                    <i class="bi bi-info-circle"></i> <strong>מידע:</strong> 
+                    המשתמש ייבא אוטומטית. אם המשתמש שייך לקבוצת "ניהול" באקטיב דירקטורי, הוא יוגדר כמנהל.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header bg-success text-white">
+                <h5><i class="bi bi-people-fill"></i> ייבוא כל המנהלים מקבוצה</h5>
+            </div>
+            <div class="card-body">
+                <form asp-action="ImportManagersFromGroup" method="post" onsubmit="return confirm('האם אתה בטוח שברצונך לייבא את כל המשתמשים מקבוצת ניהול?');">
+                    @Html.AntiForgeryToken()
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i> <strong>שימו לב:</strong>
+                        פעולה זו תייבא את כל המשתמשים מקבוצת "ניהול" מאקטיב דירקטורי ותגדיר אותם כמנהלים במערכת.
+                    </div>
+                    <div class="form-group">
+                        <button type="submit" class="btn btn-success">
+                            <i class="bi bi-download"></i> ייבא כל המנהלים מקבוצה
+                        </button>
+                    </div>
+                </form>
+                <div class="alert alert-info mt-3">
+                    <i class="bi bi-info-circle"></i> <strong>מידע:</strong> 
+                    משתמשים קיימים יעודכנו, משתמשים חדשים יתווספו כמנהלים.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header bg-info text-white">
+        <h5><i class="bi bi-question-circle"></i> הוראות</h5>
+    </div>
+    <div class="card-body">
+        <h6>ייבוא משתמש בודד:</h6>
+        <ol>
+            <li>הכנס את שם המשתמש מאקטיב דירקטורי (sAMAccountName)</li>
+            <li>המערכת תחפש את המשתמש באקטיב דירקטורי</li>
+            <li>המערכת תבדוק אם המשתמש שייך לקבוצת "ניהול"</li>
+            <li>המשתמש יתווסף למערכת עם ההרשאות המתאימות</li>
+            <li>אם יש למשתמש EmployeeID, הוא יתווסף גם לרשימת העובדים</li>
+        </ol>
+        
+        <h6 class="mt-4">ייבוא מנהלים מקבוצה:</h6>
+        <ol>
+            <li>המערכת תחפש את כל המשתמשים בקבוצת "ניהול" מאקטיב דירקטורי</li>
+            <li>כל המשתמשים יוגדרו כמנהלים במערכת</li>
+            <li>משתמשים קיימים יעודכנו, משתמשים חדשים יתווספו</li>
+        </ol>
+        
+        <div class="alert alert-warning mt-3">
+            <i class="bi bi-exclamation-triangle"></i> <strong>חשוב:</strong>
+            וודא שהגדרות Active Directory תקינות ב-appsettings.json לפני ביצוע ייבוא.
+        </div>
+    </div>
+</div>
+
