@@ -65,14 +65,18 @@ namespace AuthorizationForm.Data
                         var result = userManager.CreateAsync(admin, password).Result;
                         if (result.Succeeded)
                         {
-                            userManager.AddToRoleAsync(admin, "Admin").Wait();
+                            var roleResult = userManager.AddToRoleAsync(admin, "Admin").Result;
+                            Console.WriteLine($"SUCCESS: Created admin user '{adminUserConfig.Username}' with password '{password}'");
+                            if (!roleResult.Succeeded)
+                            {
+                                Console.WriteLine($"WARNING: Failed to add role Admin to {adminUserConfig.Username}: {string.Join(", ", roleResult.Errors.Select(e => e.Description))}");
+                            }
                         }
                         else
                         {
                             // Log errors if creation failed - but don't throw, just log
                             var errors = string.Join(", ", result.Errors.Select(e => e.Description));
-                            // Use Console.WriteLine as fallback if logger not available
-                            Console.WriteLine($"WARNING: Failed to create admin user {adminUserConfig.Username}: {errors}");
+                            Console.WriteLine($"ERROR: Failed to create admin user {adminUserConfig.Username}: {errors}");
                             // Don't throw exception - continue with other admin users or fallback
                         }
                     }
@@ -121,16 +125,22 @@ namespace AuthorizationForm.Data
                         };
 
                         // Create admin user with default password: Qa123123!@#@WS
-                        var result = userManager.CreateAsync(admin, "Qa123123!@#@WS").Result;
+                        var defaultPassword = "Qa123123!@#@WS";
+                        var result = userManager.CreateAsync(admin, defaultPassword).Result;
                         if (result.Succeeded)
                         {
-                            userManager.AddToRoleAsync(admin, "Admin").Wait();
+                            var roleResult = userManager.AddToRoleAsync(admin, "Admin").Result;
+                            Console.WriteLine($"SUCCESS: Created default admin user 'admin' with password '{defaultPassword}'");
+                            if (!roleResult.Succeeded)
+                            {
+                                Console.WriteLine($"WARNING: Failed to add role Admin to admin: {string.Join(", ", roleResult.Errors.Select(e => e.Description))}");
+                            }
                         }
                         else
                         {
                             // Log errors but don't throw - application can continue
                             var errors = string.Join(", ", result.Errors.Select(e => e.Description));
-                            Console.WriteLine($"WARNING: Failed to create default admin user: {errors}");
+                            Console.WriteLine($"ERROR: Failed to create default admin user: {errors}");
                             // Application will continue - user can be created manually
                         }
                     }

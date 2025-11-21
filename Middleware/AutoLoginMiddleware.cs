@@ -36,6 +36,15 @@ namespace AuthorizationForm.Middleware
                 return;
             }
 
+            // IMPORTANT: Skip auto-login on login page and POST requests to Account/Login
+            // This allows manual login to work properly
+            if (context.Request.Path.StartsWithSegments("/Account/Login") || 
+                (context.Request.Path.StartsWithSegments("/Account") && context.Request.Method == "POST"))
+            {
+                await _next(context);
+                return;
+            }
+
             // Check if already signed in via cookie
             if (context.User != null)
             {

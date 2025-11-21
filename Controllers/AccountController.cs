@@ -109,15 +109,63 @@ namespace AuthorizationForm.Controllers
                 
                 if (user != null)
                 {
-                    var result = await _signInManager.PasswordSignInAsync(user.UserName!, model.Password, model.RememberMe, lockoutOnFailure: false);
+                    _logger.LogInformation($"Attempting login for user: {user.UserName}, User found: {user != null}");
+                    
+                    // Verify password
+                    var passwordValid = await _userManager.CheckPasswordAsync(user, model.Password);
+                    _logger.LogInformation($"Password valid for {user.UserName}: {passwordValid}");
+                    
+                    if (passwordValid)
+                    {
+                        var result = await _signInManager.PasswordSignInAsync(user.UserName!, model.Password, model.RememberMe, lockoutOnFailure: false);
+                        _logger.LogInformation($"SignIn result for {user.UserName}: {result.Succeeded}");
+                        
                     if (result.Succeeded)
                     {
-                        _logger.LogInformation($"User {user.UserName} logged in.");
+                        _logger.LogInformation($"User {user.UserName} logged in successfully.");
+                        
+                        // Verify user has Admin role
+                        var isAdmin = await _userManager.IsInRoleAsync(user, "Admin");
+                        _logger.LogInformation($"User {user.UserName} - IsAdmin: {user.IsAdmin}, Has Admin Role: {isAdmin}");
+                        
+                        // If user should be admin but doesn't have role, add it
+                        if (user.IsAdmin && !isAdmin)
+                        {
+                            await _userManager.AddToRoleAsync(user, "Admin");
+                            _logger.LogInformation($"Added Admin role to user {user.UserName}");
+                            // Sign in again to refresh claims with new role
+                            await _signInManager.SignOutAsync();
+                            await _signInManager.SignInAsync(user, model.RememberMe);
+                        }
+                        
+                        // Refresh sign-in to ensure roles are loaded in claims
+                        // This is important because roles need to be in claims for User.IsInRole to work
+                        var roles = await _userManager.GetRolesAsync(user);
+                        _logger.LogInformation($"User {user.UserName} roles: {string.Join(", ", roles)}");
+                        
+                        // Sign out and sign in again to refresh claims
+                        await _signInManager.SignOutAsync();
+                        await _signInManager.SignInAsync(user, model.RememberMe);
+                        
                         return RedirectToLocal(returnUrl);
                     }
+                        else
+                        {
+                            _logger.LogWarning($"SignIn failed for {user.UserName}. Result: {result}");
+                            ModelState.AddModelError(string.Empty, $"התחברות נכשלה. שגיאה: {result}");
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogWarning($"Invalid password for user: {user.UserName}");
+                        ModelState.AddModelError(string.Empty, "נסיון התחברות לא תקין. אנא בדוק את שם המשתמש והסיסמה.");
+                    }
                 }
-
-                ModelState.AddModelError(string.Empty, "נסיון התחברות לא תקין. אנא בדוק את שם המשתמש והסיסמה.");
+                else
+                {
+                    _logger.LogWarning($"User not found: {model.Email}");
+                    ModelState.AddModelError(string.Empty, "נסיון התחברות לא תקין. אנא בדוק את שם המשתמש והסיסמה.");
+                }
             }
 
             return View(model);

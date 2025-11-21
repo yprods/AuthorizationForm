@@ -28,6 +28,11 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
     options.Password.RequireUppercase = true;
     options.Password.RequireNonAlphanumeric = false;
     options.Password.RequiredLength = 6;
+    
+    // Add role claims to user claims
+    options.ClaimsIdentity.RoleClaimType = System.Security.Claims.ClaimTypes.Role;
+    options.ClaimsIdentity.UserNameClaimType = System.Security.Claims.ClaimTypes.Name;
+    options.ClaimsIdentity.UserIdClaimType = System.Security.Claims.ClaimTypes.NameIdentifier;
 })
 .AddEntityFrameworkStores<ApplicationDbContext>()
 .AddDefaultTokenProviders();
@@ -161,7 +166,7 @@ app.MapControllerRoute(
     defaults: new { controller = "Account", action = "Login" });
 
 // Seed database
-using (var scope = app.Services.CreateScope())
+var scope = app.Services.CreateScope();
 {
     var services = scope.ServiceProvider;
     var logger = services.GetRequiredService<ILogger<Program>>();
@@ -174,12 +179,32 @@ using (var scope = app.Services.CreateScope())
         var adminSettings = services.GetRequiredService<IOptions<AdminSettings>>();
         DbInitializer.Initialize(context, userManager, roleManager, adminSettings);
         logger.LogInformation("Database initialization completed successfully.");
+        
+        // Verify admin user exists
+        var adminUser = await userManager.FindByNameAsync("admin");
+        if (adminUser != null)
+        {
+            var isAdmin = await userManager.IsInRoleAsync(adminUser, "Admin");
+            logger.LogInformation($"Admin user 'admin' exists. IsAdmin role: {isAdmin}");
+            
+            // Test password
+            var passwordValid = await userManager.CheckPasswordAsync(adminUser, "Qa123123!@#@WS");
+            logger.LogInformation($"Admin user 'admin' password check: {passwordValid}");
+        }
+        else
+        {
+            logger.LogWarning("Admin user 'admin' NOT FOUND! Check DbInitializer logs.");
+        }
     }
     catch (Exception ex)
     {
         logger.LogError(ex, "An error occurred seeding the DB. Application will continue but database may not be properly initialized. Error: {Message}", ex.Message);
         // Don't crash the application - log and continue
         // The database will be created on first access if needed
+    }
+    finally
+    {
+        scope.Dispose();
     }
 }
 
