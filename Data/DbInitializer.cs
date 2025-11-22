@@ -36,7 +36,8 @@ namespace AuthorizationForm.Data
             RoleManager<IdentityRole> roleManager,
             IOptions<AdminSettings> adminSettings)
         {
-            // Ensure database is created and migrations are applied
+            // Ensure database is created (SQLite file-based database)
+            // EF Core will automatically create all tables based on the DbContext model
             try
             {
                 context.Database.EnsureCreated();
@@ -45,54 +46,6 @@ namespace AuthorizationForm.Data
             {
                 Console.WriteLine($"Warning: Could not ensure database is created: {ex.Message}");
                 // Continue - database might already exist or connection issue
-            }
-            
-            // For MySQL, we'll use migrations instead of raw SQL
-            // The EmailTemplates table will be created via migrations
-            try
-            {
-                // Check if EmailTemplates table exists (MySQL way)
-                var connection = context.Database.GetDbConnection();
-                bool wasOpen = connection.State == System.Data.ConnectionState.Open;
-                if (!wasOpen)
-                    connection.Open();
-                
-                var command = connection.CreateCommand();
-                command.CommandText = "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'EmailTemplates'";
-                var result = command.ExecuteScalar();
-                var tableExists = result != null && Convert.ToInt32(result) > 0;
-                
-                if (!tableExists)
-                {
-                    // Create EmailTemplates table (MySQL syntax)
-                    var createCommand = connection.CreateCommand();
-                    createCommand.CommandText = @"
-                        CREATE TABLE EmailTemplates (
-                            Id INT AUTO_INCREMENT PRIMARY KEY,
-                            Name VARCHAR(255) NOT NULL,
-                            Description TEXT,
-                            TriggerType INT NOT NULL,
-                            Subject VARCHAR(500) NOT NULL,
-                            Body TEXT NOT NULL,
-                            IsActive TINYINT(1) NOT NULL DEFAULT 1,
-                            CreatedAt DATETIME(6) NOT NULL,
-                            UpdatedAt DATETIME(6) NOT NULL,
-                            CreatedById VARCHAR(255) NOT NULL,
-                            RecipientType VARCHAR(50) NOT NULL DEFAULT 'User',
-                            CustomRecipients TEXT,
-                            FOREIGN KEY (CreatedById) REFERENCES AspNetUsers(Id) ON DELETE RESTRICT
-                        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
-                    createCommand.ExecuteNonQuery();
-                }
-                
-                if (!wasOpen)
-                    connection.Close();
-            }
-            catch (Exception ex)
-            {
-                // If table already exists or other error, continue
-                // The EnsureCreated() should handle it
-                Console.WriteLine($"Warning: Could not create EmailTemplates table: {ex.Message}");
             }
 
             // Create roles
