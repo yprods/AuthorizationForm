@@ -16,6 +16,7 @@
     }
     var showManualLogin = ViewData["ShowManualLogin"] as bool? ?? false;
     var isSignedIn = User.Identity?.IsAuthenticated == true;
+    var isAdEnabled = ViewData["IsAdEnabled"] as bool? ?? false;
 }
 
 @if (isWindowsAuth && !isSignedIn)
@@ -107,6 +108,16 @@
                         </button>
                     </div>
                 </form>
+                @if (!isAdEnabled)
+                {
+                    <hr />
+                    <div class="text-center">
+                        <p class="mb-2">אין לך חשבון?</p>
+                        <a asp-action="Register" class="btn btn-outline-primary">
+                            <i class="bi bi-person-plus"></i> הרשמה למערכת
+                        </a>
+                    </div>
+                }
             </div>
             <div class="card-footer text-center text-muted small">
                 <i class="bi bi-shield-check"></i> התחברות מאובטחת

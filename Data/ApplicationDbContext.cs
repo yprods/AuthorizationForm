@@ -16,6 +16,7 @@ namespace AuthorizationForm.Data
         public DbSet<Employee> Employees { get; set; }
         public DbSet<ApplicationSystem> Systems { get; set; }
         public DbSet<FormTemplate> FormTemplates { get; set; }
+        public DbSet<EmailTemplate> EmailTemplates { get; set; }
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
@@ -59,6 +60,12 @@ namespace AuthorizationForm.Data
                 .OnDelete(DeleteBehavior.Cascade);
 
             builder.Entity<FormTemplate>()
+                .HasOne(t => t.CreatedBy)
+                .WithMany()
+                .HasForeignKey(t => t.CreatedById)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            builder.Entity<EmailTemplate>()
                 .HasOne(t => t.CreatedBy)
                 .WithMany()
                 .HasForeignKey(t => t.CreatedById)

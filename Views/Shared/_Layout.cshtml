@@ -38,6 +38,14 @@
                                     <i class="bi bi-plus-circle"></i> בקשה חדשה
                                 </a>
                             </li>
+                            @if (User.IsInRole("Manager") && !User.IsInRole("Admin"))
+                            {
+                                <li class="nav-item">
+                                    <a class="nav-link" asp-controller="Manager" asp-action="Index">
+                                        <i class="bi bi-speedometer2"></i> דשבורד מנהל
+                                    </a>
+                                </li>
+                            }
                             @if (User.IsInRole("Admin") || User.IsInRole("Manager"))
                             {
                                 <li class="nav-item dropdown">
@@ -57,12 +65,31 @@
                                                 <i class="bi bi-person-badge"></i> מנהלים</a></li>
                                             <li><a class="dropdown-item" asp-controller="Admin" asp-action="FormTemplates">
                                                 <i class="bi bi-file-earmark-text"></i> תבניות</a></li>
+                                            <li><a class="dropdown-item" asp-controller="Admin" asp-action="EmailTemplates">
+                                                <i class="bi bi-envelope"></i> תבניות אימייל</a></li>
+                                        }
+                                        @if (User.IsInRole("Manager"))
+                                        {
+                                            <li><hr class="dropdown-divider"></li>
+                                            <li><a class="dropdown-item" asp-controller="Manager" asp-action="Index">
+                                                <i class="bi bi-speedometer2"></i> דשבורד מנהל</a></li>
                                         }
                                     </ul>
                                 </li>
                             }
                         }
                     </ul>
+                    @if (User.Identity?.IsAuthenticated == true)
+                    {
+                        <form class="d-flex me-3" asp-controller="Search" asp-action="Index" method="get" style="max-width: 300px;">
+                            <div class="input-group">
+                                <input class="form-control" type="search" name="query" placeholder="חיפוש..." aria-label="חיפוש" value="@Context.Request.Query["query"]">
+                                <button class="btn btn-outline-light" type="submit">
+                                    <i class="bi bi-search"></i>
+                                </button>
+                            </div>
+                        </form>
+                    }
                     <ul class="navbar-nav">
                         <li class="nav-item">
                             <button class="nav-link text-light theme-toggle" id="themeToggle" title="החלף מצב תצוגה">

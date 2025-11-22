@@ -1,0 +1,353 @@
+@{
+    ViewData["Title"] = "דשבורד מנהל";
+    var pendingApprovals = ViewBag.PendingApprovals as List<AuthorizationRequest> ?? new List<AuthorizationRequest>();
+    var recentRequests = ViewBag.RecentRequests as List<AuthorizationRequest> ?? new List<AuthorizationRequest>();
+    var teamMembers = ViewBag.TeamMembers as List<ApplicationUser> ?? new List<ApplicationUser>();
+    var isAdmin = ViewBag.IsAdmin as bool? ?? false;
+    var currentUser = ViewBag.CurrentUser as ApplicationUser;
+}
+
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h2><i class="bi bi-speedometer2"></i> דשבורד מנהל</h2>
+            <p class="text-muted">ברוך הבא, @(currentUser?.FullName ?? currentUser?.UserName)</p>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-subtitle mb-2">סה"כ בקשות</h6>
+                            <h3 class="mb-0">@ViewBag.TotalRequests</h3>
+                        </div>
+                        <i class="bi bi-list-ul display-4 opacity-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-warning text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-subtitle mb-2">ממתין לאישור</h6>
+                            <h3 class="mb-0">@ViewBag.PendingCount</h3>
+                        </div>
+                        <i class="bi bi-clock-history display-4 opacity-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-subtitle mb-2">אושר</h6>
+                            <h3 class="mb-0">@ViewBag.ApprovedCount</h3>
+                        </div>
+                        <i class="bi bi-check-circle display-4 opacity-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-info text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-subtitle mb-2">ממתין לאישור סופי</h6>
+                            <h3 class="mb-0">@ViewBag.PendingFinalApproval</h3>
+                        </div>
+                        <i class="bi bi-hourglass-split display-4 opacity-50"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pending Approvals Section -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-warning text-dark">
+                    <h5 class="mb-0">
+                        <i class="bi bi-exclamation-triangle-fill"></i> 
+                        בקשות ממתינות לאישור (@pendingApprovals.Count)
+                    </h5>
+                </div>
+                <div class="card-body">
+                    @if (pendingApprovals.Any())
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>מספר בקשה</th>
+                                        <th>מבקש</th>
+                                        <th>תאריך יצירה</th>
+                                        <th>הערות</th>
+                                        <th>פעולות</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var request in pendingApprovals)
+                                    {
+                                        <tr>
+                                            <td><strong>#@request.Id</strong></td>
+                                            <td>
+                                                @(request.User?.FullName ?? request.User?.UserName ?? "לא ידוע")
+                                                <br />
+                                                <small class="text-muted">@request.User?.Email</small>
+                                            </td>
+                                            <td>@request.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td>
+                                            <td>
+                                                @if (!string.IsNullOrEmpty(request.Comments))
+                                                {
+                                                    <span class="text-truncate d-inline-block" style="max-width: 200px;" title="@request.Comments">
+                                                        @request.Comments
+                                                    </span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted">אין הערות</span>
+                                                }
+                                            </td>
+                                            <td>
+                                                <div class="btn-group" role="group">
+                                                    <a asp-controller="Requests" asp-action="Details" asp-route-id="@request.Id" 
+                                                       class="btn btn-sm btn-info" title="צפייה בפרטים">
+                                                        <i class="bi bi-eye"></i> צפייה
+                                                    </a>
+                                                    <button type="button" class="btn btn-sm btn-success approve-btn" 
+                                                            data-request-id="@request.Id" title="אשר">
+                                                        <i class="bi bi-check-lg"></i> אשר
+                                                    </button>
+                                                    <button type="button" class="btn btn-sm btn-danger reject-btn" 
+                                                            data-request-id="@request.Id" title="דחה">
+                                                        <i class="bi bi-x-lg"></i> דחה
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="alert alert-success">
+                            <i class="bi bi-check-circle"></i> אין בקשות ממתינות לאישור
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Requests and Team Members -->
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-clock-history"></i> בקשות אחרונות</h5>
+                </div>
+                <div class="card-body">
+                    @if (recentRequests.Any())
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>מספר</th>
+                                        <th>מבקש</th>
+                                        <th>סטטוס</th>
+                                        <th>תאריך</th>
+                                        <th>פעולות</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var request in recentRequests)
+                                    {
+                                        <tr>
+                                            <td>#@request.Id</td>
+                                            <td>@(request.User?.FullName ?? request.User?.UserName ?? "לא ידוע")</td>
+                                            <td>
+                                                @switch (request.Status)
+                                                {
+                                                    case RequestStatus.Draft:
+                                                        <span class="badge bg-secondary">טיוטה</span>
+                                                        break;
+                                                    case RequestStatus.PendingManagerApproval:
+                                                        <span class="badge bg-warning">ממתין לאישור מנהל</span>
+                                                        break;
+                                                    case RequestStatus.PendingFinalApproval:
+                                                        <span class="badge bg-info">ממתין לאישור סופי</span>
+                                                        break;
+                                                    case RequestStatus.Approved:
+                                                        <span class="badge bg-success">אושר</span>
+                                                        break;
+                                                    case RequestStatus.Rejected:
+                                                        <span class="badge bg-danger">נדחה</span>
+                                                        break;
+                                                    default:
+                                                        <span class="badge bg-secondary">@request.Status</span>
+                                                        break;
+                                                }
+                                            </td>
+                                            <td>@request.CreatedAt.ToString("dd/MM/yyyy")</td>
+                                            <td>
+                                                <a asp-controller="Requests" asp-action="Details" asp-route-id="@request.Id" 
+                                                   class="btn btn-sm btn-outline-primary">
+                                                    <i class="bi bi-eye"></i>
+                                                </a>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="text-muted">אין בקשות אחרונות</p>
+                    }
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-people"></i> חברי צוות (@teamMembers.Count)</h5>
+                </div>
+                <div class="card-body">
+                    @if (teamMembers.Any())
+                    {
+                        <ul class="list-group list-group-flush">
+                            @foreach (var member in teamMembers.Take(10))
+                            {
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <strong>@(member.FullName ?? member.UserName)</strong>
+                                        <br />
+                                        <small class="text-muted">@member.Email</small>
+                                    </div>
+                                    <a asp-controller="Requests" asp-action="Index" 
+                                       class="btn btn-sm btn-outline-primary" title="צפייה בבקשות">
+                                        <i class="bi bi-list-ul"></i>
+                                    </a>
+                                </li>
+                            }
+                        </ul>
+                        @if (teamMembers.Count > 10)
+                        {
+                            <div class="mt-2 text-center">
+                                <a asp-controller="Admin" asp-action="Users" class="btn btn-sm btn-outline-secondary">
+                                    צפייה בכל החברים (@teamMembers.Count)
+                                </a>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <p class="text-muted">אין חברי צוות</p>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Approval Modal -->
+<div class="modal fade" id="approvalModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="approvalModalTitle">אישור/דחיית בקשה</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="approvalForm">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" id="requestId" name="requestId" />
+                    <input type="hidden" id="approvalAction" name="approvalAction" />
+                    <div class="mb-3">
+                        <label for="approvalComments" class="form-label">הערות (אופציונלי)</label>
+                        <textarea class="form-control" id="approvalComments" name="comments" rows="3"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ביטול</button>
+                <button type="button" class="btn btn-primary" id="confirmApprovalBtn">אישור</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        $(document).ready(function() {
+            var approvalModal = new bootstrap.Modal(document.getElementById('approvalModal'));
+            var currentRequestId = null;
+            var currentAction = null;
+
+            $('.approve-btn').on('click', function() {
+                currentRequestId = $(this).data('request-id');
+                currentAction = 'approve';
+                $('#approvalModalTitle').text('אישור בקשה #' + currentRequestId);
+                $('#approvalAction').val('approve');
+                $('#requestId').val(currentRequestId);
+                $('#approvalComments').val('');
+                $('#confirmApprovalBtn').removeClass('btn-danger').addClass('btn-success').text('אשר');
+                approvalModal.show();
+            });
+
+            $('.reject-btn').on('click', function() {
+                currentRequestId = $(this).data('request-id');
+                currentAction = 'reject';
+                $('#approvalModalTitle').text('דחיית בקשה #' + currentRequestId);
+                $('#approvalAction').val('reject');
+                $('#requestId').val(currentRequestId);
+                $('#approvalComments').val('');
+                $('#confirmApprovalBtn').removeClass('btn-success').addClass('btn-danger').text('דחה');
+                approvalModal.show();
+            });
+
+            $('#confirmApprovalBtn').on('click', function() {
+                var requestId = $('#requestId').val();
+                var action = $('#approvalAction').val();
+                var comments = $('#approvalComments').val();
+
+                $.ajax({
+                    url: '@Url.Action("QuickApprove", "Manager")',
+                    type: 'POST',
+                    data: {
+                        requestId: requestId,
+                        approved: action === 'approve',
+                        comments: comments,
+                        __RequestVerificationToken: $('input[name="__RequestVerificationToken"]').val()
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            approvalModal.hide();
+                            location.reload();
+                        } else {
+                            alert('שגיאה: ' + response.message);
+                        }
+                    },
+                    error: function() {
+                        alert('אירעה שגיאה בעת ביצוע הפעולה');
+                    }
+                });
+            });
+        });
+    </script>
+}
+

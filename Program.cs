@@ -10,15 +10,52 @@ using System.Runtime.InteropServices;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Caching.Memory;
+using System.Linq;
+using DotNetEnv;
+using Pomelo.EntityFrameworkCore.MySql.Infrastructure;
+
+// Load .env file if it exists
+var envPath = Path.Combine(Directory.GetCurrentDirectory(), ".env");
+if (File.Exists(envPath))
+{
+    Env.Load(envPath);
+}
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container
 builder.Services.AddControllersWithViews();
 
-// Configure SQLite
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
+// Configure Database - MySQL with SQLite fallback
+var useMySql = builder.Configuration.GetValue<bool>("DatabaseSettings:UseMySql", true);
+var connectionString = Environment.GetEnvironmentVariable("MYSQL_CONNECTION_STRING") 
+    ?? builder.Configuration.GetConnectionString("DefaultConnection")
+    ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
+
+if (useMySql && !connectionString.Contains("Data Source="))
+{
+    // Use MySQL
+    var serverVersion = new MySqlServerVersion(new Version(8, 0, 33));
+    
+    builder.Services.AddDbContext<ApplicationDbContext>(options =>
+        options.UseMySql(connectionString, serverVersion, mySqlOptions =>
+        {
+            mySqlOptions.EnableRetryOnFailure(
+                maxRetryCount: 3,
+                maxRetryDelay: TimeSpan.FromSeconds(10),
+                errorNumbersToAdd: null);
+        }));
+}
+else
+{
+    // Fallback to SQLite if MySQL connection string contains "Data Source=" or UseMySql is false
+    var sqliteConnection = connectionString.Contains("Data Source=") 
+        ? connectionString 
+        : "Data Source=authorization.db";
+    
+    builder.Services.AddDbContext<ApplicationDbContext>(options =>
+        options.UseSqlite(sqliteConnection));
+}
 
 // Configure Identity
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
@@ -29,13 +66,15 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
     options.Password.RequireNonAlphanumeric = false;
     options.Password.RequiredLength = 6;
     
-    // Add role claims to user claims
-    options.ClaimsIdentity.RoleClaimType = System.Security.Claims.ClaimTypes.Role;
-    options.ClaimsIdentity.UserNameClaimType = System.Security.Claims.ClaimTypes.Name;
-    options.ClaimsIdentity.UserIdClaimType = System.Security.Claims.ClaimTypes.NameIdentifier;
+    // Configure claim types
+    options.ClaimsIdentity.RoleClaimType = ClaimTypes.Role;
+    options.ClaimsIdentity.UserNameClaimType = ClaimTypes.Name;
+    options.ClaimsIdentity.UserIdClaimType = ClaimTypes.NameIdentifier;
 })
 .AddEntityFrameworkStores<ApplicationDbContext>()
+.AddClaimsPrincipalFactory<AppUserClaimsPrincipalFactory>()
 .AddDefaultTokenProviders();
+
 
 // Configure Authentication - Windows Authentication with Cookie fallback
 builder.Services.AddAuthentication(options =>
@@ -81,47 +120,15 @@ builder.Services.AddAuthentication(options =>
     options.SlidingExpiration = true;
     options.Cookie.HttpOnly = true;
     options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
-    
-    // Important: Configure cookie events to include roles in claims
-    options.Events = new Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationEvents
-    {
-        OnSigningIn = async context =>
-        {
-            // Get user from principal
-            var userId = context.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (!string.IsNullOrEmpty(userId))
-            {
-                using var scope = context.HttpContext.RequestServices.CreateScope();
-                var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-                var user = await userManager.FindByIdAsync(userId);
-                
-                if (user != null)
-                {
-                    // Get user roles and add them as claims
-                    var roles = await userManager.GetRolesAsync(user);
-                    var identity = (ClaimsIdentity)context.Principal!.Identity!;
-                    
-                    foreach (var role in roles)
-                    {
-                        identity.AddClaim(new Claim(ClaimTypes.Role, role));
-                    }
-                    
-                    // Add full name claim if available
-                    if (!string.IsNullOrEmpty(user.FullName))
-                    {
-                        identity.AddClaim(new Claim("FullName", user.FullName));
-                    }
-                }
-            }
-        }
-    };
+    // Use default redirect behavior - ASP.NET Core will handle redirects automatically
 });
 
-// Allow anonymous access - only specific pages require authentication
+// Configure authorization
 builder.Services.AddAuthorization(options =>
 {
-    // No fallback policy - allow anonymous access by default
-    // Use [Authorize] attribute on specific controllers/actions that need authentication
+    // Only require authentication for pages marked with [Authorize]
+    // Pages marked with [AllowAnonymous] will be accessible without authentication
+    options.FallbackPolicy = null; // Allow anonymous by default
 });
 
 // Add memory cache for AD queries
@@ -130,6 +137,9 @@ builder.Services.AddMemoryCache();
 // Add custom services
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IPdfService, PdfService>();
+
+// Add background reminder service
+builder.Services.AddHostedService<ReminderService>();
 // Register base AD service
 builder.Services.AddScoped<ActiveDirectoryService>();
 // Register cached wrapper
@@ -169,6 +179,7 @@ app.UseStaticFiles();
 
 app.UseRouting();
 
+// Enable authentication and authorization
 app.UseAuthentication();
 app.UseAutoLogin(); // Auto-login via Windows Authentication (must be after UseAuthentication)
 app.UseAuthorization();
@@ -185,19 +196,13 @@ app.UseRequestLocalization(options =>
     options.AddSupportedUICultures(supportedUICultures);
 });
 
-// Map API controllers first (for attribute routing like [Route])
-app.MapControllers();
-
 // Map default MVC routes
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");
 
-// Ensure Account/Login allows anonymous access
-app.MapControllerRoute(
-    name: "login",
-    pattern: "Account/Login",
-    defaults: new { controller = "Account", action = "Login" });
+// Map API controllers (for attribute routing like [Route])
+app.MapControllers();
 
 // Seed database
 var scope = app.Services.CreateScope();
@@ -207,34 +212,133 @@ var scope = app.Services.CreateScope();
     try
     {
         logger.LogInformation("Starting database initialization...");
-        var context = services.GetRequiredService<ApplicationDbContext>();
-        var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
-        var roleManager = services.GetRequiredService<RoleManager<IdentityRole>>();
-        var adminSettings = services.GetRequiredService<IOptions<AdminSettings>>();
-        DbInitializer.Initialize(context, userManager, roleManager, adminSettings);
-        logger.LogInformation("Database initialization completed successfully.");
         
-        // Verify admin user exists
-        var adminUser = await userManager.FindByNameAsync("admin");
-        if (adminUser != null)
+        // Test database connection first
+        var context = services.GetRequiredService<ApplicationDbContext>();
+        try
         {
-            var isAdmin = await userManager.IsInRoleAsync(adminUser, "Admin");
-            logger.LogInformation($"Admin user 'admin' exists. IsAdmin role: {isAdmin}");
+            // Try to connect to database with timeout
+            var canConnect = await Task.Run(async () =>
+            {
+                try
+                {
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                    return await context.Database.CanConnectAsync(cts.Token);
+                }
+                catch
+                {
+                    return false;
+                }
+            });
             
-            // Test password
-            var passwordValid = await userManager.CheckPasswordAsync(adminUser, "Qa123123!@#@WS");
-            logger.LogInformation($"Admin user 'admin' password check: {passwordValid}");
+            if (!canConnect)
+            {
+                logger.LogWarning("Cannot connect to database. Attempting to create database...");
+                try
+                {
+                    await context.Database.EnsureCreatedAsync();
+                    logger.LogInformation("Database created successfully.");
+                }
+                catch (Exception createEx)
+                {
+                    logger.LogError(createEx, "Failed to create database");
+                    // Don't throw - allow application to start
+                }
+            }
+            else
+            {
+                logger.LogInformation("Database connection successful.");
+            }
         }
-        else
+        catch (Exception dbEx)
         {
-            logger.LogWarning("Admin user 'admin' NOT FOUND! Check DbInitializer logs.");
+            logger.LogError(dbEx, "Failed to connect to database. Please check:");
+            logger.LogError("1. Database server is running");
+            logger.LogError("2. Connection string is correct in appsettings.json or .env file");
+            
+            if (useMySql && !connectionString.Contains("Data Source="))
+            {
+                logger.LogError("3. For MySQL: Database exists: CREATE DATABASE authorization_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;");
+                logger.LogError("4. For MySQL: User has proper permissions");
+            }
+            
+            var safeConnectionString = connectionString.Contains("Password=") 
+                ? connectionString.Substring(0, connectionString.IndexOf("Password=")) + "Password=***"
+                : connectionString;
+            logger.LogError($"Connection string: {safeConnectionString}");
+            
+            // Don't throw - allow application to start but log the error
+            logger.LogWarning("Application will continue but database operations may fail. Please fix database connection.");
         }
-    }
-    catch (Exception ex)
-    {
-        logger.LogError(ex, "An error occurred seeding the DB. Application will continue but database may not be properly initialized. Error: {Message}", ex.Message);
-        // Don't crash the application - log and continue
-        // The database will be created on first access if needed
+        
+        try
+        {
+            var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
+            var roleManager = services.GetRequiredService<RoleManager<IdentityRole>>();
+            var adminSettings = services.GetRequiredService<IOptions<AdminSettings>>();
+            
+            // Only initialize if database is accessible
+            try
+            {
+                if (await context.Database.CanConnectAsync())
+                {
+                    DbInitializer.Initialize(context, userManager, roleManager, adminSettings);
+                    logger.LogInformation("Database initialization completed successfully.");
+                    
+                    // Verify admin user exists and ensure password matches appsettings.json
+                    var adminUser = await userManager.FindByNameAsync("admin");
+                    if (adminUser != null)
+                    {
+                        var isAdmin = await userManager.IsInRoleAsync(adminUser, "Admin");
+                        logger.LogInformation($"Admin user 'admin' exists. IsAdmin role: {isAdmin}");
+                        
+                        // Get password from appsettings.json
+                        var adminPassword = adminSettings.Value?.AdminUsers?.FirstOrDefault()?.Password ?? "Qa123456";
+                        var passwordValid = await userManager.CheckPasswordAsync(adminUser, adminPassword);
+                        logger.LogInformation($"Admin user 'admin' password check with '{adminPassword}': {passwordValid}");
+                        
+                        // If password doesn't match, reset it
+                        if (!passwordValid)
+                        {
+                            logger.LogWarning($"Admin password doesn't match. Resetting to '{adminPassword}'...");
+                            var token = await userManager.GeneratePasswordResetTokenAsync(adminUser);
+                            var resetResult = await userManager.ResetPasswordAsync(adminUser, token, adminPassword);
+                            if (resetResult.Succeeded)
+                            {
+                                logger.LogInformation($"✓ Admin user 'admin' password reset successfully to '{adminPassword}'");
+                            }
+                            else
+                            {
+                                logger.LogError($"✗ Failed to reset admin password: {string.Join(", ", resetResult.Errors.Select(e => e.Description))}");
+                            }
+                        }
+                        else
+                        {
+                            logger.LogInformation($"✓ Admin password is correct: '{adminPassword}'");
+                        }
+                    }
+                    else
+                    {
+                        logger.LogWarning("Admin user 'admin' NOT FOUND! Check DbInitializer logs.");
+                    }
+                }
+                else
+                {
+                    logger.LogWarning("Database not accessible, skipping initialization");
+                }
+            }
+            catch (Exception initEx)
+            {
+                logger.LogError(initEx, "Error during database initialization");
+                // Continue - don't crash the application
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "An error occurred seeding the DB. Application will continue but database may not be properly initialized. Error: {Message}", ex.Message);
+            // Don't crash the application - log and continue
+            // The database will be created on first access if needed
+        }
     }
     finally
     {

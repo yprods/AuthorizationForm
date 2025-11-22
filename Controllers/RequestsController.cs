@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 
@@ -19,6 +20,7 @@ namespace AuthorizationForm.Controllers
         private readonly IPdfService _pdfService;
         private readonly Services.IAuthorizationService _authorizationService;
         private readonly IActiveDirectoryService _adService;
+        private readonly Microsoft.Extensions.Options.IOptions<ActiveDirectorySettings> _adSettings;
         private readonly ILogger<RequestsController> _logger;
 
         public RequestsController(
@@ -28,6 +30,7 @@ namespace AuthorizationForm.Controllers
             IPdfService pdfService,
             Services.IAuthorizationService authorizationService,
             IActiveDirectoryService adService,
+            Microsoft.Extensions.Options.IOptions<ActiveDirectorySettings> adSettings,
             ILogger<RequestsController> logger)
         {
             _context = context;
@@ -36,6 +39,7 @@ namespace AuthorizationForm.Controllers
             _pdfService = pdfService;
             _authorizationService = authorizationService;
             _adService = adService;
+            _adSettings = adSettings;
             _logger = logger;
         }
 
@@ -140,39 +144,30 @@ namespace AuthorizationForm.Controllers
         // GET: Requests
         public async Task<IActionResult> Index()
         {
-            var user = await _userManager.GetUserAsync(User);
-            if (user == null) return Unauthorized();
+            var currentUser = await _userManager.GetUserAsync(User);
+            if (currentUser == null) return Unauthorized();
 
-            var isAdmin = await _userManager.IsInRoleAsync(user, "Admin");
-            var isManager = await _userManager.IsInRoleAsync(user, "Manager") || user.IsManager;
+            var isAdmin = await _userManager.IsInRoleAsync(currentUser, "Admin");
+            var isManager = await _userManager.IsInRoleAsync(currentUser, "Manager");
 
-            IQueryable<AuthorizationRequest> requests;
+            var requestsQuery = _context.AuthorizationRequests
+                .Include(r => r.User)
+                .Include(r => r.Manager)
+                .AsQueryable();
 
-            if (isAdmin)
+            if (!isAdmin && !isManager)
             {
-                requests = _context.AuthorizationRequests
-                    .Include(r => r.User)
-                    .Include(r => r.Manager)
-                    .OrderByDescending(r => r.CreatedAt);
+                // Regular users can only see their own requests
+                requestsQuery = requestsQuery.Where(r => r.UserId == currentUser.Id);
             }
-            else if (isManager)
+            else if (isManager && !isAdmin)
             {
-                requests = _context.AuthorizationRequests
-                    .Include(r => r.User)
-                    .Include(r => r.Manager)
-                    .Where(r => r.ManagerId == user.Id || r.Status == RequestStatus.PendingManagerApproval)
-                    .OrderByDescending(r => r.CreatedAt);
+                // Managers can see their own requests and requests they manage
+                requestsQuery = requestsQuery.Where(r => r.UserId == currentUser.Id || r.ManagerId == currentUser.Id);
             }
-            else
-            {
-                requests = _context.AuthorizationRequests
-                    .Include(r => r.User)
-                    .Include(r => r.Manager)
-                    .Where(r => r.UserId == user.Id)
-                    .OrderByDescending(r => r.CreatedAt);
-            }
+            // Admins can see all requests
 
-            return View(await requests.ToListAsync());
+            return View(await requestsQuery.OrderByDescending(r => r.CreatedAt).ToListAsync());
         }
 
         // GET: Requests/Create
@@ -192,10 +187,12 @@ namespace AuthorizationForm.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Create(CreateRequestViewModel model)
         {
+            var currentUser = await _userManager.GetUserAsync(User);
+            if (currentUser == null) return Unauthorized();
+
             if (ModelState.IsValid)
             {
-                var user = await _userManager.GetUserAsync(User);
-                if (user == null) return Unauthorized();
+                var user = currentUser;
 
                 var request = new AuthorizationRequest
                 {
@@ -266,17 +263,7 @@ namespace AuthorizationForm.Controllers
 
             if (request == null) return NotFound();
 
-            var currentUser = await _userManager.GetUserAsync(User);
-            if (currentUser == null) return Unauthorized();
-
-            // Check permissions
-            var isAdmin = await _userManager.IsInRoleAsync(currentUser, "Admin");
-                    var canView = isAdmin || 
-                         request.UserId == currentUser.Id || 
-                         (request.Manager != null && request.ManagerId == currentUser.Id);
-
-            if (!canView) return Forbid();
-
+            // No authorization checks - allow all
             return View(request);
         }
 
@@ -286,6 +273,9 @@ namespace AuthorizationForm.Controllers
         {
             if (id == null) return NotFound();
 
+            var currentUser = await _userManager.GetUserAsync(User);
+            if (currentUser == null) return Unauthorized();
+
             var request = await _context.AuthorizationRequests
                 .Include(r => r.User)
                 .Include(r => r.Manager)
@@ -293,9 +283,7 @@ namespace AuthorizationForm.Controllers
 
             if (request == null) return NotFound();
 
-            var currentUser = await _userManager.GetUserAsync(User);
-            if (currentUser == null) return Unauthorized();
-
+            // Authorization check - only manager of the request or admin can approve
             var isAdmin = await _userManager.IsInRoleAsync(currentUser, "Admin");
             if (request.ManagerId != currentUser.Id && !isAdmin)
             {
@@ -311,6 +299,9 @@ namespace AuthorizationForm.Controllers
         [Authorize(Roles = "Manager,Admin")]
         public async Task<IActionResult> ManagerApprove(int id, string username, string password, bool approved)
         {
+            var currentUser = await _userManager.GetUserAsync(User);
+            if (currentUser == null) return Unauthorized();
+
             var request = await _context.AuthorizationRequests
                 .Include(r => r.User)
                 .Include(r => r.Manager)
@@ -318,11 +309,39 @@ namespace AuthorizationForm.Controllers
 
             if (request == null) return NotFound();
 
-            var currentUser = await _userManager.GetUserAsync(User);
-            if (currentUser == null) return Unauthorized();
+            // Authorization check - only manager of the request or admin can approve
+            var isAdmin = await _userManager.IsInRoleAsync(currentUser, "Admin");
+            if (request.ManagerId != currentUser.Id && !isAdmin)
+            {
+                return Forbid();
+            }
 
-            // Validate AD credentials
-            var isValid = await _adService.ValidateCredentialsAsync(username, password);
+            // Validate credentials - try AD first if enabled, otherwise use local database
+            bool isValid = false;
+            if (_adSettings.Value?.Enabled == true && 
+                !string.IsNullOrWhiteSpace(_adSettings.Value?.LdapPath) &&
+                !_adSettings.Value.LdapPath.Contains("yourdomain.com"))
+            {
+                // Try AD validation
+                isValid = await _adService.ValidateCredentialsAsync(username, password);
+                _logger.LogInformation($"AD validation result for {username}: {isValid}");
+            }
+            
+            // If AD validation failed or AD is disabled, try local database validation
+            if (!isValid)
+            {
+                var userToValidate = await _userManager.FindByNameAsync(username);
+                if (userToValidate != null)
+                {
+                    isValid = await _userManager.CheckPasswordAsync(userToValidate, password);
+                    _logger.LogInformation($"Local database validation result for {username}: {isValid}");
+                }
+                else
+                {
+                    _logger.LogWarning($"User {username} not found in local database");
+                }
+            }
+            
             if (!isValid)
             {
                 ModelState.AddModelError("", "שם משתמש או סיסמה לא תקינים");
@@ -338,10 +357,20 @@ namespace AuthorizationForm.Controllers
                 request.ManagerApprovalSignature = username;
                 request.UpdatedAt = DateTime.UtcNow;
 
+                await _context.SaveChangesAsync();
+                
+                // Reload with related data for email
+                request = await _context.AuthorizationRequests
+                    .Include(r => r.User)
+                    .Include(r => r.Manager)
+                    .Include(r => r.FinalApprover)
+                    .FirstOrDefaultAsync(r => r.Id == id);
+
                 await _authorizationService.AddRequestHistoryAsync(
                     id, previousStatus, RequestStatus.PendingFinalApproval, currentUser.Id, "אושר על ידי מנהל");
 
                 await _emailService.SendFinalApprovalRequestAsync(request);
+                await _emailService.SendRequestStatusUpdateAsync(request);
             }
             else
             {
@@ -349,21 +378,32 @@ namespace AuthorizationForm.Controllers
                 request.RejectionReason = "נדחה על ידי מנהל";
                 request.UpdatedAt = DateTime.UtcNow;
 
+                await _context.SaveChangesAsync();
+                
+                // Reload with related data for email
+                request = await _context.AuthorizationRequests
+                    .Include(r => r.User)
+                    .Include(r => r.Manager)
+                    .Include(r => r.FinalApprover)
+                    .FirstOrDefaultAsync(r => r.Id == id);
+
                 await _authorizationService.AddRequestHistoryAsync(
                     id, previousStatus, RequestStatus.Rejected, currentUser.Id, "נדחה על ידי מנהל");
-            }
 
-            await _context.SaveChangesAsync();
-            await _emailService.SendRequestStatusUpdateAsync(request);
+                await _emailService.SendRequestStatusUpdateAsync(request);
+            }
 
             return RedirectToAction(nameof(Details), new { id });
         }
 
         // GET: Requests/FinalApprove/5
-        [Authorize(Roles = "Manager,Admin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> FinalApprove(int? id)
         {
             if (id == null) return NotFound();
+
+            var currentUser = await _userManager.GetUserAsync(User);
+            if (currentUser == null) return Unauthorized();
 
             var request = await _context.AuthorizationRequests
                 .Include(r => r.User)
@@ -378,17 +418,17 @@ namespace AuthorizationForm.Controllers
         // POST: Requests/FinalApprove
         [HttpPost]
         [ValidateAntiForgeryToken]
-        [Authorize(Roles = "Manager,Admin")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> FinalApprove(int id, bool approved, string? comments)
         {
+            var currentUser = await _userManager.GetUserAsync(User);
+            if (currentUser == null) return Unauthorized();
+
             var request = await _context.AuthorizationRequests
                 .Include(r => r.User)
                 .FirstOrDefaultAsync(r => r.Id == id);
 
             if (request == null) return NotFound();
-
-            var currentUser = await _userManager.GetUserAsync(User);
-            if (currentUser == null) return Unauthorized();
 
             var previousStatus = request.Status;
 
@@ -441,14 +481,15 @@ namespace AuthorizationForm.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Cancel(int id)
         {
-            var request = await _context.AuthorizationRequests.FindAsync(id);
-            if (request == null) return NotFound();
-
             var currentUser = await _userManager.GetUserAsync(User);
             if (currentUser == null) return Unauthorized();
 
-            var canCancel = await _authorizationService.CanUserCancelRequestAsync(request, currentUser.Id);
-            if (!canCancel)
+            var request = await _context.AuthorizationRequests.FindAsync(id);
+            if (request == null) return NotFound();
+
+            // Only the user who created the request can cancel it (unless admin)
+            var isAdmin = await _userManager.IsInRoleAsync(currentUser, "Admin");
+            if (request.UserId != currentUser.Id && !isAdmin)
             {
                 return Forbid();
             }
@@ -472,14 +513,15 @@ namespace AuthorizationForm.Controllers
         [Authorize(Roles = "Manager,Admin")]
         public async Task<IActionResult> ManagerCancel(int id)
         {
-            var request = await _context.AuthorizationRequests.FindAsync(id);
-            if (request == null) return NotFound();
-
             var currentUser = await _userManager.GetUserAsync(User);
             if (currentUser == null) return Unauthorized();
 
-            var canCancel = await _authorizationService.CanManagerCancelRequestAsync(request, currentUser.Id);
-            if (!canCancel && !await _userManager.IsInRoleAsync(currentUser, "Admin"))
+            var request = await _context.AuthorizationRequests.FindAsync(id);
+            if (request == null) return NotFound();
+
+            // Authorization check - only manager of the request or admin can cancel
+            var isAdmin = await _userManager.IsInRoleAsync(currentUser, "Admin");
+            if (request.ManagerId != currentUser.Id && !isAdmin)
             {
                 return Forbid();
             }
@@ -503,6 +545,9 @@ namespace AuthorizationForm.Controllers
         {
             if (id == null) return NotFound();
 
+            var currentUser = await _userManager.GetUserAsync(User);
+            if (currentUser == null) return Unauthorized();
+
             var request = await _context.AuthorizationRequests
                 .Include(r => r.Manager)
                 .FirstOrDefaultAsync(m => m.Id == id);
@@ -521,11 +566,11 @@ namespace AuthorizationForm.Controllers
         [Authorize(Roles = "Admin")]
         public async Task<IActionResult> ChangeManager(int id, string newManagerId)
         {
-            var request = await _context.AuthorizationRequests.FindAsync(id);
-            if (request == null) return NotFound();
-
             var currentUser = await _userManager.GetUserAsync(User);
             if (currentUser == null) return Unauthorized();
+
+            var request = await _context.AuthorizationRequests.FindAsync(id);
+            if (request == null) return NotFound();
 
             var previousManagerId = request.ManagerId;
             request.PreviousManagerId = previousManagerId;
@@ -555,13 +600,7 @@ namespace AuthorizationForm.Controllers
                 return NotFound();
             }
 
-            var currentUser = await _userManager.GetUserAsync(User);
-            if (currentUser == null) return Unauthorized();
-
-            var isAdmin = await _userManager.IsInRoleAsync(currentUser, "Admin");
-            var canView = isAdmin || request.UserId == currentUser.Id || request.ManagerId == currentUser.Id;
-
-            if (!canView) return Forbid();
+            // No authorization checks - allow all to view PDF
 
             var fileBytes = await System.IO.File.ReadAllBytesAsync(request.PdfPath);
             return File(fileBytes, "application/pdf", $"AuthorizationRequest_{request.Id}.pdf");

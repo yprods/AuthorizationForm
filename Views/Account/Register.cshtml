@@ -1,0 +1,150 @@
+@model RegisterViewModel
+@{
+    ViewData["Title"] = "הרשמה למערכת";
+}
+
+<div class="row justify-content-center">
+    <div class="col-md-5">
+        <div class="card">
+            <div class="card-header bg-success text-white text-center">
+                <h3><i class="bi bi-person-plus"></i> הרשמה למערכת</h3>
+            </div>
+            <div class="card-body">
+                <form asp-action="Register" method="post" id="registerForm">
+                    <div asp-validation-summary="All" class="text-danger alert alert-danger"></div>
+                    
+                    <div class="form-group mb-3">
+                        <label asp-for="Username" class="form-label">
+                            <strong>@Html.DisplayNameFor(m => m.Username)</strong> <span class="text-danger">*</span>
+                        </label>
+                        <input asp-for="Username" class="form-control" placeholder="הכנס שם משתמש" required autocomplete="username" />
+                        <span asp-validation-for="Username" class="text-danger"></span>
+                        <small class="form-text text-muted">שם המשתמש חייב להכיל בין 3 ל-50 תווים</small>
+                    </div>
+
+                    <div class="form-group mb-3">
+                        <label asp-for="Email" class="form-label">
+                            <strong>@Html.DisplayNameFor(m => m.Email)</strong> <span class="text-danger">*</span>
+                        </label>
+                        <input asp-for="Email" type="email" class="form-control" placeholder="הכנס כתובת אימייל" required autocomplete="email" />
+                        <span asp-validation-for="Email" class="text-danger"></span>
+                    </div>
+
+                    <div class="form-group mb-3">
+                        <label asp-for="FullName" class="form-label">
+                            <strong>@Html.DisplayNameFor(m => m.FullName)</strong> <span class="text-danger">*</span>
+                        </label>
+                        <input asp-for="FullName" class="form-control" placeholder="הכנס שם מלא" required />
+                        <span asp-validation-for="FullName" class="text-danger"></span>
+                    </div>
+
+                    <div class="form-group mb-3">
+                        <label asp-for="Password" class="form-label">
+                            <strong>@Html.DisplayNameFor(m => m.Password)</strong> <span class="text-danger">*</span>
+                        </label>
+                        <input asp-for="Password" class="form-control" placeholder="הכנס סיסמא" required autocomplete="new-password" />
+                        <span asp-validation-for="Password" class="text-danger"></span>
+                        <small class="form-text text-muted">הסיסמה חייבת להכיל לפחות 6 תווים, אות גדולה, אות קטנה וספרה</small>
+                    </div>
+
+                    <div class="form-group mb-3">
+                        <label asp-for="ConfirmPassword" class="form-label">
+                            <strong>@Html.DisplayNameFor(m => m.ConfirmPassword)</strong> <span class="text-danger">*</span>
+                        </label>
+                        <input asp-for="ConfirmPassword" class="form-control" placeholder="הכנס סיסמא שוב" required autocomplete="new-password" />
+                        <span asp-validation-for="ConfirmPassword" class="text-danger"></span>
+                    </div>
+
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-success btn-lg">
+                            <i class="bi bi-person-plus"></i> הירשם
+                        </button>
+                        <a asp-action="Login" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-right"></i> חזור להתחברות
+                        </a>
+                    </div>
+                </form>
+            </div>
+            <div class="card-footer text-center text-muted small">
+                <i class="bi bi-shield-check"></i> הרשמה מאובטחת
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    @{await Html.RenderPartialAsync("_ValidationScriptsPartial");}
+    <script>
+        $(document).ready(function() {
+            // Client-side validation
+            $('#registerForm').on('submit', function(e) {
+                var username = $('#Username').val().trim();
+                var email = $('#Email').val().trim();
+                var fullName = $('#FullName').val().trim();
+                var password = $('#Password').val();
+                var confirmPassword = $('#ConfirmPassword').val();
+                
+                var isValid = true;
+                var errorMessage = '';
+
+                if (!username || username.length < 3 || username.length > 50) {
+                    isValid = false;
+                    errorMessage += 'שם המשתמש חייב להכיל בין 3 ל-50 תווים\n';
+                }
+
+                if (!email || !isValidEmail(email)) {
+                    isValid = false;
+                    errorMessage += 'אנא הכנס כתובת אימייל תקינה\n';
+                }
+
+                if (!fullName) {
+                    isValid = false;
+                    errorMessage += 'שדה שם מלא הוא חובה\n';
+                }
+
+                if (!password || password.length < 6) {
+                    isValid = false;
+                    errorMessage += 'הסיסמה חייבת להכיל לפחות 6 תווים\n';
+                }
+
+                if (password !== confirmPassword) {
+                    isValid = false;
+                    errorMessage += 'הסיסמאות אינן תואמות\n';
+                }
+
+                if (!isValid) {
+                    e.preventDefault();
+                    alert(errorMessage.trim());
+                    return false;
+                }
+            });
+
+            function isValidEmail(email) {
+                var re = /^[^\s@@]+@@[^\s@@]+\.[^\s@@]+$/;
+                return re.test(email);
+            }
+
+            // Real-time password match validation
+            $('#ConfirmPassword').on('keyup', function() {
+                var password = $('#Password').val();
+                var confirmPassword = $(this).val();
+                
+                if (confirmPassword && password !== confirmPassword) {
+                    $(this).addClass('is-invalid');
+                } else {
+                    $(this).removeClass('is-invalid');
+                }
+            });
+
+            // Highlight required fields
+            $('input[required]').on('blur', function() {
+                if ($(this).val().trim() === '') {
+                    $(this).addClass('is-invalid');
+                } else {
+                    $(this).removeClass('is-invalid');
+                }
+            });
+        });
+    </script>
+}
+

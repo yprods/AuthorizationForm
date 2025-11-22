@@ -18,6 +18,13 @@ namespace AuthorizationForm.Services
 
         public async Task<bool> ValidateCredentialsAsync(string username, string password)
         {
+            // If AD is not enabled, return false (cannot validate)
+            if (!_settings.Enabled || string.IsNullOrWhiteSpace(_settings.LdapPath) || _settings.LdapPath.Contains("yourdomain.com"))
+            {
+                _logger.LogInformation($"AD is disabled or not configured - skipping credential validation for {username}");
+                return false;
+            }
+
             try
             {
                 return await Task.Run(() =>
@@ -43,6 +50,13 @@ namespace AuthorizationForm.Services
 
         public async Task<string?> GetUserFullNameAsync(string username)
         {
+            // If AD is not enabled, return null
+            if (!_settings.Enabled || string.IsNullOrWhiteSpace(_settings.LdapPath) || _settings.LdapPath.Contains("yourdomain.com"))
+            {
+                _logger.LogDebug($"AD is disabled or not configured - cannot get full name for {username}");
+                return null;
+            }
+
             try
             {
                 return await Task.Run(() =>
@@ -69,6 +83,13 @@ namespace AuthorizationForm.Services
 
         public async Task<string?> GetUserEmailAsync(string username)
         {
+            // If AD is not enabled, return null
+            if (!_settings.Enabled || string.IsNullOrWhiteSpace(_settings.LdapPath) || _settings.LdapPath.Contains("yourdomain.com"))
+            {
+                _logger.LogDebug($"AD is disabled or not configured - cannot get email for {username}");
+                return null;
+            }
+
             try
             {
                 return await Task.Run(() =>
@@ -93,6 +114,13 @@ namespace AuthorizationForm.Services
 
         public async Task<ADUserInfo?> GetUserInfoAsync(string username)
         {
+            // If AD is not enabled, return null
+            if (!_settings.Enabled || string.IsNullOrWhiteSpace(_settings.LdapPath) || _settings.LdapPath.Contains("yourdomain.com"))
+            {
+                _logger.LogDebug($"AD is disabled or not configured - cannot get user info for {username}");
+                return null;
+            }
+
             try
             {
                 return await Task.Run(() =>
@@ -137,6 +165,13 @@ namespace AuthorizationForm.Services
 
         public async Task<bool> IsUserInGroupAsync(string username, string groupName)
         {
+            // If AD is not enabled, return false
+            if (!_settings.Enabled || string.IsNullOrWhiteSpace(_settings.LdapPath) || _settings.LdapPath.Contains("yourdomain.com"))
+            {
+                _logger.LogDebug($"AD is disabled or not configured - cannot check group membership for {username}");
+                return false;
+            }
+
             try
             {
                 return await Task.Run(() =>
@@ -176,6 +211,14 @@ namespace AuthorizationForm.Services
         public async Task<List<ADUserInfo>> GetUsersFromGroupAsync(string groupName)
         {
             var users = new List<ADUserInfo>();
+            
+            // If AD is not enabled, return empty list
+            if (!_settings.Enabled || string.IsNullOrWhiteSpace(_settings.LdapPath) || _settings.LdapPath.Contains("yourdomain.com"))
+            {
+                _logger.LogDebug($"AD is disabled or not configured - cannot get users from group {groupName}");
+                return users;
+            }
+
             try
             {
                 return await Task.Run(() =>
@@ -254,16 +297,17 @@ namespace AuthorizationForm.Services
 
             try
             {
-                var ldapPath = _settings?.LdapPath ?? "";
-                _logger.LogInformation($"Searching AD users with term: {searchTerm}, LdapPath: {(string.IsNullOrWhiteSpace(ldapPath) ? "NOT CONFIGURED" : ldapPath)}");
-                
-                if (string.IsNullOrWhiteSpace(ldapPath) || ldapPath.Contains("yourdomain.com"))
+                // If AD is not enabled, return empty list
+                if (!_settings.Enabled || string.IsNullOrWhiteSpace(_settings.LdapPath) || _settings.LdapPath.Contains("yourdomain.com"))
                 {
-                    _logger.LogInformation($"LdapPath is not configured - skipping AD search (offline mode). This is normal if working without domain.");
+                    _logger.LogInformation($"AD is disabled or not configured - skipping AD search (offline mode). This is normal if working without domain.");
                     // Don't throw exception - return empty list so UI doesn't break
                     // Application will continue with local database search only
                     return new List<ADUserInfo>();
                 }
+
+                var ldapPath = _settings?.LdapPath ?? "";
+                _logger.LogInformation($"Searching AD users with term: {searchTerm}, LdapPath: {(string.IsNullOrWhiteSpace(ldapPath) ? "NOT CONFIGURED" : ldapPath)}");
                 
                 return await Task.Run(() =>
                 {

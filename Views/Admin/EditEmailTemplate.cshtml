@@ -1,0 +1,144 @@
+@using AuthorizationForm.Models
+@model EmailTemplate
+@{
+    ViewData["Title"] = "עריכת תבנית אימייל";
+}
+
+<h2><i class="bi bi-envelope-pencil"></i> עריכת תבנית אימייל: @Model.Name</h2>
+<hr />
+
+@if (ViewData.ModelState.ErrorCount > 0)
+{
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        <h5><i class="bi bi-exclamation-triangle"></i> שגיאות:</h5>
+        <ul class="mb-0">
+            @foreach (var error in ViewData.ModelState.Values.SelectMany(v => v.Errors))
+            {
+                <li>@error.ErrorMessage</li>
+            }
+        </ul>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+}
+
+<form asp-action="EditEmailTemplate" method="post">
+    <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+    <input type="hidden" asp-for="Id" />
+    
+    <div class="row">
+        <div class="col-md-6">
+            <div class="form-group mb-3">
+                <label asp-for="Name" class="form-label">שם תבנית <span class="text-danger">*</span></label>
+                <input asp-for="Name" class="form-control" required />
+                <span asp-validation-for="Name" class="text-danger"></span>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="form-group mb-3">
+                <label asp-for="TriggerType" class="form-label">סוג טריגר <span class="text-danger">*</span></label>
+                <select asp-for="TriggerType" class="form-select" asp-items="Html.GetEnumSelectList<EmailTriggerType>()" required></select>
+                <span asp-validation-for="TriggerType" class="text-danger"></span>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-12">
+            <div class="form-group mb-3">
+                <label asp-for="Description" class="form-label">תיאור</label>
+                <textarea asp-for="Description" class="form-control" rows="2">@Model.Description</textarea>
+                <span asp-validation-for="Description" class="text-danger"></span>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6">
+            <div class="form-group mb-3">
+                <label asp-for="RecipientType" class="form-label">סוג נמען <span class="text-danger">*</span></label>
+                <select asp-for="RecipientType" class="form-select" required>
+                    <option value="User">משתמש (יוצר הבקשה)</option>
+                    <option value="Manager">מנהל</option>
+                    <option value="FinalApprover">מאשר סופי</option>
+                    <option value="Custom">מותאם אישית</option>
+                </select>
+                <span asp-validation-for="RecipientType" class="text-danger"></span>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="form-group mb-3" id="customRecipientsGroup" style="display: @(Model.RecipientType == "Custom" ? "block" : "none");">
+                <label asp-for="CustomRecipients" class="form-label">כתובות אימייל (מופרדות בפסיק)</label>
+                <input asp-for="CustomRecipients" class="form-control" value="@Model.CustomRecipients" />
+                <small class="form-text text-muted">הכנס כתובות אימייל מופרדות בפסיק</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-12">
+            <div class="form-group mb-3">
+                <label asp-for="Subject" class="form-label">נושא האימייל <span class="text-danger">*</span></label>
+                <input asp-for="Subject" class="form-control" required />
+                <span asp-validation-for="Subject" class="text-danger"></span>
+                <small class="form-text text-muted">ניתן להשתמש בפלס הולדרים: {RequestId}, {UserName}, {ManagerName}, {Status}</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-12">
+            <div class="form-group mb-3">
+                <label asp-for="Body" class="form-label">תוכן האימייל (HTML) <span class="text-danger">*</span></label>
+                <textarea asp-for="Body" class="form-control" rows="15" required>@Model.Body</textarea>
+                <span asp-validation-for="Body" class="text-danger"></span>
+                <small class="form-text text-muted">
+                    ניתן להשתמש בפלס הולדרים: 
+                    {RequestId}, {UserName}, {UserFullName}, {UserEmail}, 
+                    {ManagerName}, {ManagerEmail}, 
+                    {Status}, {ServiceLevel}, {SelectedSystems}, {Comments}, {RejectionReason}
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6">
+            <div class="form-check mb-3">
+                <input asp-for="IsActive" class="form-check-input" />
+                <label asp-for="IsActive" class="form-check-label">
+                    תבנית פעילה
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <button type="submit" class="btn btn-primary">
+            <i class="bi bi-save"></i> שמור שינויים
+        </button>
+        <a asp-action="EmailTemplates" class="btn btn-secondary">
+            <i class="bi bi-arrow-right"></i> ביטול
+        </a>
+    </div>
+</form>
+
+@section Scripts {
+    @{await Html.RenderPartialAsync("_ValidationScriptsPartial");}
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const recipientTypeSelect = document.querySelector('select[name="RecipientType"]');
+            const customRecipientsGroup = document.getElementById('customRecipientsGroup');
+            
+            function toggleCustomRecipients() {
+                if (recipientTypeSelect.value === 'Custom') {
+                    customRecipientsGroup.style.display = 'block';
+                } else {
+                    customRecipientsGroup.style.display = 'none';
+                }
+            }
+            
+            recipientTypeSelect.addEventListener('change', toggleCustomRecipients);
+        });
+    </script>
+}
+

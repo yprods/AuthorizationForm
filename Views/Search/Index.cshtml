@@ -1,0 +1,313 @@
+@model SearchResultsViewModel
+@{
+    ViewData["Title"] = "חיפוש";
+}
+
+<h2><i class="bi bi-search"></i> תוצאות חיפוש</h2>
+<hr />
+
+@if (string.IsNullOrWhiteSpace(Model.Query))
+{
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle"></i> הזן שאילתת חיפוש
+    </div>
+}
+else
+{
+    <div class="mb-3">
+        <p class="text-muted">תוצאות חיפוש עבור: <strong>@Model.Query</strong></p>
+    </div>
+
+    @if (Model.TotalResults == 0)
+    {
+        <div class="alert alert-warning">
+            <i class="bi bi-exclamation-triangle"></i> לא נמצאו תוצאות
+        </div>
+    }
+    else
+    {
+        @if (Model.Requests.Any())
+        {
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-list-ul"></i> בקשות (@Model.Requests.Count)</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>מספר בקשה</th>
+                                    <th>מבקש</th>
+                                    <th>מנהל</th>
+                                    <th>סטטוס</th>
+                                    <th>תאריך יצירה</th>
+                                    <th>פעולות</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var request in Model.Requests)
+                                {
+                                    <tr>
+                                        <td>#@request.Id</td>
+                                        <td>@(request.User?.FullName ?? "לא ידוע")</td>
+                                        <td>@(request.Manager?.FullName ?? "לא מוגדר")</td>
+                                        <td>
+                                            @switch (request.Status)
+                                            {
+                                                case RequestStatus.Draft:
+                                                    <span class="badge bg-secondary">טיוטה</span>
+                                                    break;
+                                                case RequestStatus.PendingManagerApproval:
+                                                    <span class="badge bg-warning">ממתין לאישור מנהל</span>
+                                                    break;
+                                                case RequestStatus.PendingFinalApproval:
+                                                    <span class="badge bg-info">ממתין לאישור סופי</span>
+                                                    break;
+                                                case RequestStatus.Approved:
+                                                    <span class="badge bg-success">אושר</span>
+                                                    break;
+                                                case RequestStatus.Rejected:
+                                                    <span class="badge bg-danger">נדחה</span>
+                                                    break;
+                                                default:
+                                                    <span class="badge bg-secondary">@request.Status</span>
+                                                    break;
+                                            }
+                                        </td>
+                                        <td>@request.CreatedAt.ToString("dd/MM/yyyy")</td>
+                                        <td>
+                                            <a asp-controller="Requests" asp-action="Details" asp-route-id="@request.Id" class="btn btn-sm btn-primary">
+                                                <i class="bi bi-eye"></i> צפייה
+                                            </a>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @if (Model.Employees.Any())
+        {
+            <div class="card mb-4">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0"><i class="bi bi-people"></i> עובדים (@Model.Employees.Count)</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>מספר עובד</th>
+                                    <th>שם פרטי</th>
+                                    <th>שם משפחה</th>
+                                    <th>מחלקה</th>
+                                    <th>אימייל</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var employee in Model.Employees)
+                                {
+                                    <tr>
+                                        <td>@employee.EmployeeId</td>
+                                        <td>@employee.FirstName</td>
+                                        <td>@employee.LastName</td>
+                                        <td>@employee.Department</td>
+                                        <td>@employee.Email</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @if (Model.Systems.Any())
+        {
+            <div class="card mb-4">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0"><i class="bi bi-laptop"></i> מערכות (@Model.Systems.Count)</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>שם</th>
+                                    <th>תיאור</th>
+                                    <th>קטגוריה</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var system in Model.Systems)
+                                {
+                                    <tr>
+                                        <td>@system.Name</td>
+                                        <td>@system.Description</td>
+                                        <td>@system.Category</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @if (Model.Users.Any())
+        {
+            <div class="card mb-4">
+                <div class="card-header bg-secondary text-white">
+                    <h5 class="mb-0"><i class="bi bi-person-circle"></i> משתמשים (@Model.Users.Count)</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>שם משתמש</th>
+                                    <th>שם מלא</th>
+                                    <th>אימייל</th>
+                                    <th>מחלקה</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var user in Model.Users)
+                                {
+                                    <tr>
+                                        <td>@user.UserName</td>
+                                        <td>@user.FullName</td>
+                                        <td>@user.Email</td>
+                                        <td>@user.Department</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @if (Model.FormTemplates.Any())
+        {
+            <div class="card mb-4">
+                <div class="card-header bg-dark text-white">
+                    <h5 class="mb-0"><i class="bi bi-file-earmark-text"></i> תבניות טפסים (@Model.FormTemplates.Count)</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>שם</th>
+                                    <th>תיאור</th>
+                                    <th>נוצר על ידי</th>
+                                    <th>סטטוס</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var template in Model.FormTemplates)
+                                {
+                                    <tr>
+                                        <td>@template.Name</td>
+                                        <td>@template.Description</td>
+                                        <td>@(template.CreatedBy?.FullName ?? template.CreatedBy?.UserName ?? "לא ידוע")</td>
+                                        <td>
+                                            @if (template.IsActive)
+                                            {
+                                                <span class="badge bg-success">פעיל</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-secondary">לא פעיל</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @if (Model.EmailTemplates.Any())
+        {
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-envelope"></i> תבניות אימייל (@Model.EmailTemplates.Count)</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>שם</th>
+                                    <th>נושא</th>
+                                    <th>סוג טריגר</th>
+                                    <th>נוצר על ידי</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var template in Model.EmailTemplates)
+                                {
+                                    <tr>
+                                        <td>@template.Name</td>
+                                        <td>@template.Subject</td>
+                                        <td>@template.TriggerType</td>
+                                        <td>@(template.CreatedBy?.FullName ?? template.CreatedBy?.UserName ?? "לא ידוע")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @if (Model.RequestHistories.Any())
+        {
+            <div class="card mb-4">
+                <div class="card-header bg-warning text-dark">
+                    <h5 class="mb-0"><i class="bi bi-clock-history"></i> היסטוריית בקשות (@Model.RequestHistories.Count)</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>מספר בקשה</th>
+                                    <th>פעולה</th>
+                                    <th>מבוצע על ידי</th>
+                                    <th>תאריך</th>
+                                    <th>הערות</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var history in Model.RequestHistories)
+                                {
+                                    <tr>
+                                        <td>#@(history.Request?.Id ?? history.RequestId)</td>
+                                        <td>
+                                            <span class="badge bg-info">@history.PreviousStatus</span>
+                                            <i class="bi bi-arrow-right"></i>
+                                            <span class="badge bg-primary">@history.NewStatus</span>
+                                        </td>
+                                        <td>@history.ActionPerformedBy</td>
+                                        <td>@history.CreatedAt.ToString("dd/MM/yyyy HH:mm")</td>
+                                        <td>@history.Comments</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        }
+    }
+}
+

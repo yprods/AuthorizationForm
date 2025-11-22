@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using System.Linq;
 
 namespace AuthorizationForm.Controllers
 {
@@ -35,8 +36,23 @@ namespace AuthorizationForm.Controllers
             _logger = logger;
         }
 
-        public IActionResult Index()
+        public async Task<IActionResult> Index()
         {
+            var currentUser = await _userManager.GetUserAsync(User);
+            if (currentUser == null)
+            {
+                _logger.LogWarning("Admin Index: User is null");
+                return RedirectToAction("Login", "Account");
+            }
+
+            var isAdmin = await _userManager.IsInRoleAsync(currentUser, "Admin");
+            if (!isAdmin)
+            {
+                _logger.LogWarning($"Admin Index: User {currentUser.UserName} is not Admin");
+                return Forbid();
+            }
+
+            _logger.LogInformation($"Admin Index: User {currentUser.UserName} accessed admin panel");
             return View();
         }
 
@@ -197,6 +213,313 @@ namespace AuthorizationForm.Controllers
             return View(allManagers);
         }
 
+        // Users Management
+        public async Task<IActionResult> Users()
+        {
+            var allUsers = _userManager.Users.ToList();
+            var usersWithRoles = new List<(ApplicationUser User, IList<string> Roles)>();
+            
+            foreach (var user in allUsers)
+            {
+                var roles = await _userManager.GetRolesAsync(user);
+                usersWithRoles.Add((user, roles));
+            }
+            
+            ViewBag.UsersWithRoles = usersWithRoles;
+            return View(allUsers);
+        }
+
+        [HttpGet]
+        public IActionResult CreateUser()
+        {
+            return View();
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> CreateUser(string userName, string email, string password, string fullName, string department, bool isManager, bool isAdmin)
+        {
+            if (string.IsNullOrWhiteSpace(userName))
+            {
+                ModelState.AddModelError("", "שם משתמש הוא חובה");
+            }
+
+            if (string.IsNullOrWhiteSpace(email))
+            {
+                ModelState.AddModelError("", "אימייל הוא חובה");
+            }
+
+            if (string.IsNullOrWhiteSpace(password))
+            {
+                ModelState.AddModelError("", "סיסמה היא חובה");
+            }
+            else if (password.Length < 6)
+            {
+                ModelState.AddModelError("", "סיסמה חייבת להכיל לפחות 6 תווים");
+            }
+
+            if (ModelState.IsValid)
+            {
+                // Check if user already exists
+                var existingUser = await _userManager.FindByNameAsync(userName) ?? 
+                                 await _userManager.FindByEmailAsync(email);
+                
+                if (existingUser != null)
+                {
+                    ModelState.AddModelError("", $"משתמש עם שם משתמש '{userName}' או אימייל '{email}' כבר קיים במערכת");
+                    return View();
+                }
+
+                // Create new user
+                var user = new ApplicationUser
+                {
+                    UserName = userName,
+                    Email = email,
+                    FullName = fullName,
+                    Department = department,
+                    IsManager = isManager,
+                    IsAdmin = isAdmin,
+                    EmailConfirmed = true,
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                var result = await _userManager.CreateAsync(user, password);
+
+                if (result.Succeeded)
+                {
+                    // Add to appropriate role
+                    if (isAdmin)
+                    {
+                        await _userManager.AddToRoleAsync(user, "Admin");
+                        if (!isManager)
+                        {
+                            isManager = true; // Admin is also Manager
+                            user.IsManager = true;
+                            await _userManager.UpdateAsync(user);
+                        }
+                    }
+                    else if (isManager)
+                    {
+                        await _userManager.AddToRoleAsync(user, "Manager");
+                    }
+                    else
+                    {
+                        await _userManager.AddToRoleAsync(user, "User");
+                    }
+
+                    TempData["Success"] = $"משתמש '{userName}' נוצר בהצלחה";
+                    return RedirectToAction(nameof(Users));
+                }
+                else
+                {
+                    foreach (var error in result.Errors)
+                    {
+                        ModelState.AddModelError("", error.Description);
+                    }
+                }
+            }
+
+            return View();
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> EditUser(string? id)
+        {
+            if (string.IsNullOrEmpty(id))
+            {
+                return NotFound();
+            }
+
+            var user = await _userManager.FindByIdAsync(id);
+            if (user == null)
+            {
+                return NotFound();
+            }
+
+            var roles = await _userManager.GetRolesAsync(user);
+            ViewBag.UserRoles = roles;
+
+            return View(user);
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> EditUser(string id, string userName, string email, string fullName, string department, bool isManager, bool isAdmin, string? newPassword)
+        {
+            if (string.IsNullOrEmpty(id))
+            {
+                return NotFound();
+            }
+
+            var user = await _userManager.FindByIdAsync(id);
+            if (user == null)
+            {
+                return NotFound();
+            }
+
+            if (string.IsNullOrWhiteSpace(userName))
+            {
+                ModelState.AddModelError("", "שם משתמש הוא חובה");
+            }
+
+            if (string.IsNullOrWhiteSpace(email))
+            {
+                ModelState.AddModelError("", "אימייל הוא חובה");
+            }
+
+            if (ModelState.IsValid)
+            {
+                // Check if username or email is already taken by another user
+                var existingUserByUsername = await _userManager.FindByNameAsync(userName);
+                if (existingUserByUsername != null && existingUserByUsername.Id != id)
+                {
+                    ModelState.AddModelError("", $"שם משתמש '{userName}' כבר תפוס על ידי משתמש אחר");
+                    var roles = await _userManager.GetRolesAsync(user);
+                    ViewBag.UserRoles = roles;
+                    return View(user);
+                }
+
+                var existingUserByEmail = await _userManager.FindByEmailAsync(email);
+                if (existingUserByEmail != null && existingUserByEmail.Id != id)
+                {
+                    ModelState.AddModelError("", $"אימייל '{email}' כבר תפוס על ידי משתמש אחר");
+                    var roles = await _userManager.GetRolesAsync(user);
+                    ViewBag.UserRoles = roles;
+                    return View(user);
+                }
+
+                // Update user properties
+                user.UserName = userName;
+                user.Email = email;
+                user.FullName = fullName;
+                user.Department = department;
+                
+                // Handle admin/manager roles
+                var currentRoles = await _userManager.GetRolesAsync(user);
+                
+                if (isAdmin && !currentRoles.Contains("Admin"))
+                {
+                    user.IsAdmin = true;
+                    user.IsManager = true; // Admin is also Manager
+                    await _userManager.AddToRoleAsync(user, "Admin");
+                    if (!currentRoles.Contains("Manager"))
+                    {
+                        await _userManager.AddToRoleAsync(user, "Manager");
+                    }
+                    await _userManager.RemoveFromRoleAsync(user, "User");
+                }
+                else if (!isAdmin && currentRoles.Contains("Admin"))
+                {
+                    user.IsAdmin = false;
+                    await _userManager.RemoveFromRoleAsync(user, "Admin");
+                    if (!isManager)
+                    {
+                        await _userManager.RemoveFromRoleAsync(user, "Manager");
+                        await _userManager.AddToRoleAsync(user, "User");
+                    }
+                }
+                
+                if (isManager && !currentRoles.Contains("Manager"))
+                {
+                    user.IsManager = true;
+                    await _userManager.AddToRoleAsync(user, "Manager");
+                    if (!currentRoles.Contains("Admin"))
+                    {
+                        await _userManager.RemoveFromRoleAsync(user, "User");
+                    }
+                }
+                else if (!isManager && currentRoles.Contains("Manager") && !currentRoles.Contains("Admin"))
+                {
+                    user.IsManager = false;
+                    await _userManager.RemoveFromRoleAsync(user, "Manager");
+                    await _userManager.AddToRoleAsync(user, "User");
+                }
+
+                var updateResult = await _userManager.UpdateAsync(user);
+
+                if (updateResult.Succeeded)
+                {
+                    // Update password if provided
+                    if (!string.IsNullOrWhiteSpace(newPassword) && newPassword.Length >= 6)
+                    {
+                        var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+                        var passwordResult = await _userManager.ResetPasswordAsync(user, token, newPassword);
+                        if (!passwordResult.Succeeded)
+                        {
+                            foreach (var error in passwordResult.Errors)
+                            {
+                                ModelState.AddModelError("", $"שגיאה בעדכון סיסמה: {error.Description}");
+                            }
+                            var roles = await _userManager.GetRolesAsync(user);
+                            ViewBag.UserRoles = roles;
+                            return View(user);
+                        }
+                    }
+
+                    TempData["Success"] = $"משתמש '{userName}' עודכן בהצלחה";
+                    return RedirectToAction(nameof(Users));
+                }
+                else
+                {
+                    foreach (var error in updateResult.Errors)
+                    {
+                        ModelState.AddModelError("", error.Description);
+                    }
+                }
+            }
+
+            var userRoles = await _userManager.GetRolesAsync(user);
+            ViewBag.UserRoles = userRoles;
+            return View(user);
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> DeleteUser(string id)
+        {
+            if (string.IsNullOrEmpty(id))
+            {
+                return NotFound();
+            }
+
+            var user = await _userManager.FindByIdAsync(id);
+            if (user == null)
+            {
+                return NotFound();
+            }
+
+            // Prevent deleting the current user
+            var currentUser = await _userManager.GetUserAsync(User);
+            if (currentUser != null && currentUser.Id == user.Id)
+            {
+                TempData["Error"] = "לא ניתן למחוק את המשתמש הנוכחי";
+                return RedirectToAction(nameof(Users));
+            }
+
+            // Prevent deleting the last admin
+            if (await _userManager.IsInRoleAsync(user, "Admin"))
+            {
+                var admins = await _userManager.GetUsersInRoleAsync("Admin");
+                if (admins.Count <= 1)
+                {
+                    TempData["Error"] = "לא ניתן למחוק את המשתמש האחרון עם הרשאת Admin";
+                    return RedirectToAction(nameof(Users));
+                }
+            }
+
+            var result = await _userManager.DeleteAsync(user);
+            if (result.Succeeded)
+            {
+                TempData["Success"] = $"משתמש '{user.UserName}' נמחק בהצלחה";
+            }
+            else
+            {
+                TempData["Error"] = $"שגיאה במחיקת משתמש: {string.Join(", ", result.Errors.Select(e => e.Description))}";
+            }
+
+            return RedirectToAction(nameof(Users));
+        }
+
         // Form Templates Management
         public async Task<IActionResult> FormTemplates()
         {
@@ -278,6 +601,91 @@ namespace AuthorizationForm.Controllers
             return RedirectToAction(nameof(FormTemplates));
         }
 
+        // Email Templates Management
+        public async Task<IActionResult> EmailTemplates()
+        {
+            return View(await _context.EmailTemplates
+                .Include(t => t.CreatedBy)
+                .OrderBy(t => t.TriggerType)
+                .ThenBy(t => t.Name)
+                .ToListAsync());
+        }
+
+        [HttpGet]
+        public IActionResult CreateEmailTemplate()
+        {
+            return View();
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> CreateEmailTemplate(EmailTemplate template)
+        {
+            var currentUser = await _userManager.GetUserAsync(User);
+            if (currentUser == null) return Unauthorized();
+
+            if (ModelState.IsValid)
+            {
+                template.CreatedById = currentUser.Id;
+                template.CreatedAt = DateTime.UtcNow;
+                template.UpdatedAt = DateTime.UtcNow;
+                _context.Add(template);
+                await _context.SaveChangesAsync();
+                TempData["Success"] = "תבנית אימייל נוצרה בהצלחה";
+                return RedirectToAction(nameof(EmailTemplates));
+            }
+            return View(template);
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> EditEmailTemplate(int? id)
+        {
+            if (id == null) return NotFound();
+            var template = await _context.EmailTemplates.FindAsync(id);
+            if (template == null) return NotFound();
+            return View(template);
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> EditEmailTemplate(int id, EmailTemplate template)
+        {
+            if (id != template.Id) return NotFound();
+
+            if (ModelState.IsValid)
+            {
+                try
+                {
+                    template.UpdatedAt = DateTime.UtcNow;
+                    _context.Update(template);
+                    await _context.SaveChangesAsync();
+                    TempData["Success"] = "תבנית אימייל עודכנה בהצלחה";
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    if (!_context.EmailTemplates.Any(t => t.Id == id))
+                        return NotFound();
+                    throw;
+                }
+                return RedirectToAction(nameof(EmailTemplates));
+            }
+            return View(template);
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> DeleteEmailTemplate(int id)
+        {
+            var template = await _context.EmailTemplates.FindAsync(id);
+            if (template != null)
+            {
+                template.IsActive = false;
+                await _context.SaveChangesAsync();
+                TempData["Success"] = "תבנית אימייל נמחקה בהצלחה";
+            }
+            return RedirectToAction(nameof(EmailTemplates));
+        }
+
         // Import Users from Active Directory
         [HttpGet]
         public IActionResult ImportUsers()
@@ -291,6 +699,13 @@ namespace AuthorizationForm.Controllers
         {
             if (string.IsNullOrWhiteSpace(term) || term.Length < 2)
             {
+                return Json(new List<object>());
+            }
+
+            // Check if AD is enabled
+            if (!_adSettings.Enabled || string.IsNullOrWhiteSpace(_adSettings.LdapPath) || _adSettings.LdapPath.Contains("yourdomain.com"))
+            {
+                _logger.LogInformation("AD is disabled or not configured - returning empty results");
                 return Json(new List<object>());
             }
 
@@ -322,6 +737,13 @@ namespace AuthorizationForm.Controllers
             if (string.IsNullOrEmpty(username))
             {
                 TempData["Error"] = "אנא הכנס שם משתמש";
+                return RedirectToAction(nameof(ImportUsers));
+            }
+
+            // Check if AD is enabled
+            if (!_adSettings.Enabled || string.IsNullOrWhiteSpace(_adSettings.LdapPath) || _adSettings.LdapPath.Contains("yourdomain.com"))
+            {
+                TempData["Error"] = "אקטיב דירקטורי אינו מופעל או לא מוגדר. אנא השתמש ביצירת משתמש ידנית.";
                 return RedirectToAction(nameof(ImportUsers));
             }
 
@@ -413,6 +835,13 @@ namespace AuthorizationForm.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> ImportManagersFromGroup()
         {
+            // Check if AD is enabled
+            if (!_adSettings.Enabled || string.IsNullOrWhiteSpace(_adSettings.LdapPath) || _adSettings.LdapPath.Contains("yourdomain.com"))
+            {
+                TempData["Error"] = "אקטיב דירקטורי אינו מופעל או לא מוגדר. אנא השתמש ביצירת משתמשים ידנית.";
+                return RedirectToAction(nameof(ImportUsers));
+            }
+
             try
             {
                 var usersFromGroup = await _adService.GetUsersFromGroupAsync(_adSettings.ManagementGroup);

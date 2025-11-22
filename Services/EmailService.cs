@@ -1,19 +1,26 @@
 using AuthorizationForm.Models;
+using AuthorizationForm.Data;
 using MailKit.Net.Smtp;
 using MailKit.Security;
 using MimeKit;
 using Microsoft.Extensions.Options;
+using Microsoft.EntityFrameworkCore;
 
 namespace AuthorizationForm.Services
 {
     public class EmailService : IEmailService
     {
         private readonly EmailSettings _emailSettings;
+        private readonly ApplicationDbContext _context;
         private readonly ILogger<EmailService> _logger;
 
-        public EmailService(IOptions<EmailSettings> emailSettings, ILogger<EmailService> logger)
+        public EmailService(
+            IOptions<EmailSettings> emailSettings, 
+            ApplicationDbContext context,
+            ILogger<EmailService> logger)
         {
             _emailSettings = emailSettings.Value;
+            _context = context;
             _logger = logger;
         }
 
@@ -55,164 +62,249 @@ namespace AuthorizationForm.Services
 
         public async Task SendAuthorizationRequestAsync(AuthorizationRequest request)
         {
-            var subject = "בקשת הרשאות חדשה - דורשת אישור";
-            var body = $@"
-                <html dir='rtl'>
-                <head>
-                    <meta charset='utf-8'>
-                    <style>
-                        body {{ font-family: Arial, sans-serif; direction: rtl; }}
-                        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                        .header {{ background-color: #4CAF50; color: white; padding: 15px; text-align: center; }}
-                        .content {{ padding: 20px; background-color: #f9f9f9; }}
-                        .footer {{ text-align: center; padding: 10px; font-size: 12px; }}
-                    </style>
-                </head>
-                <body>
-                    <div class='container'>
-                        <div class='header'>
-                            <h2>בקשת הרשאות חדשה</h2>
-                        </div>
-                        <div class='content'>
-                            <p>שלום {request.User?.FullName ?? "משתמש"},</p>
-                            <p>התקבלה בקשת הרשאות חדשה.</p>
-                            <p><strong>מספר בקשה:</strong> {request.Id}</p>
-                            <p><strong>רמת שירות:</strong> {GetServiceLevelName(request.ServiceLevel)}</p>
-                            <p><strong>מערכות נבחרו:</strong> {request.SelectedSystems}</p>
-                            <p><a href='{GenerateApprovalLink(request.Id)}'>לצפייה בבקשה</a></p>
-                        </div>
-                        <div class='footer'>
-                            <p>זהו מייל אוטומטי, אנא אל תשיב עליו.</p>
-                        </div>
-                    </div>
-                </body>
-                </html>";
+            // Try to get template from database
+            var template = await _context.EmailTemplates
+                .FirstOrDefaultAsync(t => t.TriggerType == EmailTriggerType.RequestCreated && t.IsActive);
+            
+            string subject;
+            string body;
+            string recipientEmail;
 
-            if (!string.IsNullOrEmpty(request.User?.Email))
+            if (template != null)
             {
-                await SendEmailAsync(request.User.Email, subject, body);
+                subject = ReplacePlaceholders(template.Subject, request);
+                body = ReplacePlaceholders(template.Body, request);
+                recipientEmail = GetRecipientEmail(template, request);
+            }
+            else
+            {
+                // Fallback to default template
+                subject = "בקשת הרשאות חדשה - דורשת אישור";
+                body = $@"
+                    <html dir='rtl'>
+                    <head>
+                        <meta charset='utf-8'>
+                        <style>
+                            body {{ font-family: Arial, sans-serif; direction: rtl; }}
+                            .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                            .header {{ background-color: #4CAF50; color: white; padding: 15px; text-align: center; }}
+                            .content {{ padding: 20px; background-color: #f9f9f9; }}
+                            .footer {{ text-align: center; padding: 10px; font-size: 12px; }}
+                        </style>
+                    </head>
+                    <body>
+                        <div class='container'>
+                            <div class='header'>
+                                <h2>בקשת הרשאות חדשה</h2>
+                            </div>
+                            <div class='content'>
+                                <p>שלום {request.User?.FullName ?? "משתמש"},</p>
+                                <p>התקבלה בקשת הרשאות חדשה.</p>
+                                <p><strong>מספר בקשה:</strong> {request.Id}</p>
+                                <p><strong>רמת שירות:</strong> {GetServiceLevelName(request.ServiceLevel)}</p>
+                                <p><strong>מערכות נבחרו:</strong> {request.SelectedSystems}</p>
+                                <p><a href='{GenerateApprovalLink(request.Id)}'>לצפייה בבקשה</a></p>
+                            </div>
+                            <div class='footer'>
+                                <p>זהו מייל אוטומטי, אנא אל תשיב עליו.</p>
+                            </div>
+                        </div>
+                    </body>
+                    </html>";
+                recipientEmail = request.User?.Email ?? "";
+            }
+
+            if (!string.IsNullOrEmpty(recipientEmail))
+            {
+                await SendEmailAsync(recipientEmail, subject, body);
             }
         }
 
         public async Task SendManagerApprovalRequestAsync(AuthorizationRequest request)
         {
-            var subject = "בקשת אישור מנהל - בקשת הרשאות";
-            var approvalLink = GenerateManagerApprovalLink(request.Id);
+            // Try to get template from database
+            var template = await _context.EmailTemplates
+                .FirstOrDefaultAsync(t => t.TriggerType == EmailTriggerType.ManagerApprovalRequest && t.IsActive);
+            
+            string subject;
+            string body;
+            string recipientEmail;
 
-            var body = $@"
-                <html dir='rtl'>
-                <head>
-                    <meta charset='utf-8'>
-                    <style>
-                        body {{ font-family: Arial, sans-serif; direction: rtl; }}
-                        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                        .header {{ background-color: #2196F3; color: white; padding: 15px; text-align: center; }}
-                        .content {{ padding: 20px; background-color: #f9f9f9; }}
-                        .button {{ background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; }}
-                    </style>
-                </head>
-                <body>
-                    <div class='container'>
-                        <div class='header'>
-                            <h2>אישור מנהל נדרש</h2>
-                        </div>
-                        <div class='content'>
-                            <p>שלום {request.Manager?.FullName ?? "מנהל"},</p>
-                            <p>התקבלה בקשת הרשאות הממתינה לאישורך.</p>
-                            <p><strong>מספר בקשה:</strong> {request.Id}</p>
-                            <p><strong>מבקש:</strong> {request.User?.FullName}</p>
-                            <p><strong>מערכות:</strong> {request.SelectedSystems}</p>
-                            <p style='text-align: center; margin: 30px 0;'>
-                                <a href='{approvalLink}' class='button'>לחיצה לאישור</a>
-                            </p>
-                        </div>
-                    </div>
-                </body>
-                </html>";
-
-            if (!string.IsNullOrEmpty(request.Manager?.Email))
+            if (template != null)
             {
-                await SendEmailAsync(request.Manager.Email, subject, body);
+                subject = ReplacePlaceholders(template.Subject, request);
+                body = ReplacePlaceholders(template.Body, request);
+                recipientEmail = GetRecipientEmail(template, request);
+            }
+            else
+            {
+                // Fallback to default template
+                var approvalLink = GenerateManagerApprovalLink(request.Id);
+                subject = "בקשת אישור מנהל - בקשת הרשאות";
+                body = $@"
+                    <html dir='rtl'>
+                    <head>
+                        <meta charset='utf-8'>
+                        <style>
+                            body {{ font-family: Arial, sans-serif; direction: rtl; }}
+                            .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                            .header {{ background-color: #2196F3; color: white; padding: 15px; text-align: center; }}
+                            .content {{ padding: 20px; background-color: #f9f9f9; }}
+                            .button {{ background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; }}
+                        </style>
+                    </head>
+                    <body>
+                        <div class='container'>
+                            <div class='header'>
+                                <h2>אישור מנהל נדרש</h2>
+                            </div>
+                            <div class='content'>
+                                <p>שלום {request.Manager?.FullName ?? "מנהל"},</p>
+                                <p>התקבלה בקשת הרשאות הממתינה לאישורך.</p>
+                                <p><strong>מספר בקשה:</strong> {request.Id}</p>
+                                <p><strong>מבקש:</strong> {request.User?.FullName}</p>
+                                <p><strong>מערכות:</strong> {request.SelectedSystems}</p>
+                                <p style='text-align: center; margin: 30px 0;'>
+                                    <a href='{approvalLink}' class='button'>לחיצה לאישור</a>
+                                </p>
+                            </div>
+                        </div>
+                    </body>
+                    </html>";
+                recipientEmail = request.Manager?.Email ?? "";
+            }
+
+            if (!string.IsNullOrEmpty(recipientEmail))
+            {
+                await SendEmailAsync(recipientEmail, subject, body);
             }
         }
 
         public async Task SendFinalApprovalRequestAsync(AuthorizationRequest request)
         {
-            var subject = "בקשת אישור סופי - בקשת הרשאות";
-            var approvalLink = GenerateFinalApprovalLink(request.Id);
+            // Try to get template from database
+            var template = await _context.EmailTemplates
+                .FirstOrDefaultAsync(t => t.TriggerType == EmailTriggerType.FinalApprovalRequest && t.IsActive);
+            
+            string subject;
+            string body;
+            string recipientEmail;
 
-            var body = $@"
-                <html dir='rtl'>
-                <head>
-                    <meta charset='utf-8'>
-                    <style>
-                        body {{ font-family: Arial, sans-serif; direction: rtl; }}
-                        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                        .header {{ background-color: #FF9800; color: white; padding: 15px; text-align: center; }}
-                        .content {{ padding: 20px; background-color: #f9f9f9; }}
-                        .button {{ background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; }}
-                    </style>
-                </head>
-                <body>
-                    <div class='container'>
-                        <div class='header'>
-                            <h2>אישור סופי נדרש</h2>
+            if (template != null)
+            {
+                subject = ReplacePlaceholders(template.Subject, request);
+                body = ReplacePlaceholders(template.Body, request);
+                recipientEmail = GetRecipientEmail(template, request);
+            }
+            else
+            {
+                // Fallback to default template
+                var approvalLink = GenerateFinalApprovalLink(request.Id);
+                subject = "בקשת אישור סופי - בקשת הרשאות";
+                body = $@"
+                    <html dir='rtl'>
+                    <head>
+                        <meta charset='utf-8'>
+                        <style>
+                            body {{ font-family: Arial, sans-serif; direction: rtl; }}
+                            .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                            .header {{ background-color: #FF9800; color: white; padding: 15px; text-align: center; }}
+                            .content {{ padding: 20px; background-color: #f9f9f9; }}
+                            .button {{ background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; }}
+                        </style>
+                    </head>
+                    <body>
+                        <div class='container'>
+                            <div class='header'>
+                                <h2>אישור סופי נדרש</h2>
+                            </div>
+                            <div class='content'>
+                                <p>שלום,</p>
+                                <p>בקשת הרשאות אושרה על ידי המנהל וממתינה לאישור סופי.</p>
+                                <p><strong>מספר בקשה:</strong> {request.Id}</p>
+                                <p><strong>מבקש:</strong> {request.User?.FullName}</p>
+                                <p style='text-align: center; margin: 30px 0;'>
+                                    <a href='{approvalLink}' class='button'>לחיצה לאישור/דחייה</a>
+                                </p>
+                            </div>
                         </div>
-                        <div class='content'>
-                            <p>שלום,</p>
-                            <p>בקשת הרשאות אושרה על ידי המנהל וממתינה לאישור סופי.</p>
-                            <p><strong>מספר בקשה:</strong> {request.Id}</p>
-                            <p><strong>מבקש:</strong> {request.User?.FullName}</p>
-                            <p style='text-align: center; margin: 30px 0;'>
-                                <a href='{approvalLink}' class='button'>לחיצה לאישור/דחייה</a>
-                            </p>
-                        </div>
-                    </div>
-                </body>
-                </html>";
+                    </body>
+                    </html>";
+                recipientEmail = request.FinalApprover?.Email ?? _emailSettings.SenderEmail;
+            }
 
-            // Send to final approver if specified, otherwise use configured email
-            var finalApproverEmail = request.FinalApprover?.Email ?? _emailSettings.SenderEmail;
-            await SendEmailAsync(finalApproverEmail, subject, body);
+            if (!string.IsNullOrEmpty(recipientEmail))
+            {
+                await SendEmailAsync(recipientEmail, subject, body);
+            }
         }
 
         public async Task SendRequestStatusUpdateAsync(AuthorizationRequest request)
         {
-            var statusName = GetStatusName(request.Status);
-            var subject = $"עדכון סטטוס בקשת הרשאות #{request.Id} - {statusName}";
+            // Determine trigger type based on status
+            EmailTriggerType triggerType = EmailTriggerType.StatusChanged;
+            if (request.Status == RequestStatus.Approved)
+                triggerType = EmailTriggerType.FinalApproved;
+            else if (request.Status == RequestStatus.Rejected)
+                triggerType = EmailTriggerType.FinalRejected;
+            else if (request.Status == RequestStatus.CancelledByUser)
+                triggerType = EmailTriggerType.RequestCancelledByUser;
+            else if (request.Status == RequestStatus.CancelledByManager)
+                triggerType = EmailTriggerType.RequestCancelledByManager;
 
-            var body = $@"
-                <html dir='rtl'>
-                <head>
-                    <meta charset='utf-8'>
-                    <style>
-                        body {{ font-family: Arial, sans-serif; direction: rtl; }}
-                        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                        .header {{ background-color: #9C27B0; color: white; padding: 15px; text-align: center; }}
-                        .content {{ padding: 20px; background-color: #f9f9f9; }}
-                    </style>
-                </head>
-                <body>
-                    <div class='container'>
-                        <div class='header'>
-                            <h2>עדכון סטטוס</h2>
-                        </div>
-                        <div class='content'>
-                            <p>שלום {request.User?.FullName ?? "משתמש"},</p>
-                            <p>סטטוס בקשת ההרשאה שלך עודכן:</p>
-                            <p><strong>מספר בקשה:</strong> {request.Id}</p>
-                            <p><strong>סטטוס חדש:</strong> {statusName}</p>
-                            {(request.Status == RequestStatus.Rejected && !string.IsNullOrEmpty(request.RejectionReason) 
-                                ? $"<p><strong>סיבת דחייה:</strong> {request.RejectionReason}</p>" 
-                                : "")}
-                        </div>
-                    </div>
-                </body>
-                </html>";
+            // Try to get template from database
+            var template = await _context.EmailTemplates
+                .FirstOrDefaultAsync(t => t.TriggerType == triggerType && t.IsActive);
+            
+            string subject;
+            string body;
+            string recipientEmail;
 
-            if (!string.IsNullOrEmpty(request.User?.Email))
+            if (template != null)
             {
-                await SendEmailAsync(request.User.Email, subject, body);
+                subject = ReplacePlaceholders(template.Subject, request);
+                body = ReplacePlaceholders(template.Body, request);
+                recipientEmail = GetRecipientEmail(template, request);
+            }
+            else
+            {
+                // Fallback to default template
+                var statusName = GetStatusName(request.Status);
+                subject = $"עדכון סטטוס בקשת הרשאות #{request.Id} - {statusName}";
+                body = $@"
+                    <html dir='rtl'>
+                    <head>
+                        <meta charset='utf-8'>
+                        <style>
+                            body {{ font-family: Arial, sans-serif; direction: rtl; }}
+                            .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                            .header {{ background-color: #9C27B0; color: white; padding: 15px; text-align: center; }}
+                            .content {{ padding: 20px; background-color: #f9f9f9; }}
+                        </style>
+                    </head>
+                    <body>
+                        <div class='container'>
+                            <div class='header'>
+                                <h2>עדכון סטטוס</h2>
+                            </div>
+                            <div class='content'>
+                                <p>שלום {request.User?.FullName ?? "משתמש"},</p>
+                                <p>סטטוס בקשת ההרשאה שלך עודכן:</p>
+                                <p><strong>מספר בקשה:</strong> {request.Id}</p>
+                                <p><strong>סטטוס חדש:</strong> {statusName}</p>
+                                {(request.Status == RequestStatus.Rejected && !string.IsNullOrEmpty(request.RejectionReason) 
+                                    ? $"<p><strong>סיבת דחייה:</strong> {request.RejectionReason}</p>" 
+                                    : "")}
+                            </div>
+                        </div>
+                    </body>
+                    </html>";
+                recipientEmail = request.User?.Email ?? "";
+            }
+
+            if (!string.IsNullOrEmpty(recipientEmail))
+            {
+                await SendEmailAsync(recipientEmail, subject, body);
             }
         }
 
@@ -255,6 +347,48 @@ namespace AuthorizationForm.Services
                 RequestStatus.CancelledByManager => "בוטל על ידי מנהל",
                 RequestStatus.ManagerChanged => "מנהל שונה",
                 _ => "לא ידוע"
+            };
+        }
+
+        private string ReplacePlaceholders(string template, AuthorizationRequest request)
+        {
+            if (string.IsNullOrEmpty(template)) return template;
+
+            var systems = !string.IsNullOrEmpty(request.SelectedSystems) 
+                ? System.Text.Json.JsonSerializer.Deserialize<List<int>>(request.SelectedSystems) ?? new List<int>()
+                : new List<int>();
+
+            var systemNames = _context.Systems
+                .Where(s => systems.Contains(s.Id))
+                .Select(s => s.Name)
+                .ToList();
+
+            return template
+                .Replace("{RequestId}", request.Id.ToString())
+                .Replace("{UserName}", request.User?.UserName ?? "")
+                .Replace("{UserFullName}", request.User?.FullName ?? "")
+                .Replace("{UserEmail}", request.User?.Email ?? "")
+                .Replace("{ManagerName}", request.Manager?.FullName ?? "")
+                .Replace("{ManagerEmail}", request.Manager?.Email ?? "")
+                .Replace("{Status}", GetStatusName(request.Status))
+                .Replace("{ServiceLevel}", GetServiceLevelName(request.ServiceLevel))
+                .Replace("{SelectedSystems}", string.Join(", ", systemNames))
+                .Replace("{Comments}", request.Comments ?? "")
+                .Replace("{RejectionReason}", request.RejectionReason ?? "")
+                .Replace("{ManagerApprovalLink}", GenerateManagerApprovalLink(request.Id))
+                .Replace("{FinalApprovalLink}", GenerateFinalApprovalLink(request.Id))
+                .Replace("{DetailsLink}", GenerateApprovalLink(request.Id));
+        }
+
+        private string GetRecipientEmail(EmailTemplate template, AuthorizationRequest request)
+        {
+            return template.RecipientType switch
+            {
+                "User" => request.User?.Email ?? "",
+                "Manager" => request.Manager?.Email ?? "",
+                "FinalApprover" => request.FinalApprover?.Email ?? _emailSettings.SenderEmail,
+                "Custom" => template.CustomRecipients ?? "",
+                _ => request.User?.Email ?? ""
             };
         }
     }

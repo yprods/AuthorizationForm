@@ -2,7 +2,9 @@ using AuthorizationForm.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using System.ComponentModel.DataAnnotations;
+using System.Linq;
 
 namespace AuthorizationForm.Controllers
 {
@@ -12,15 +14,18 @@ namespace AuthorizationForm.Controllers
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly SignInManager<ApplicationUser> _signInManager;
         private readonly ILogger<AccountController> _logger;
+        private readonly IOptions<ActiveDirectorySettings> _adSettings;
 
         public AccountController(
             UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
-            ILogger<AccountController> logger)
+            ILogger<AccountController> logger,
+            IOptions<ActiveDirectorySettings> adSettings)
         {
             _userManager = userManager;
             _signInManager = signInManager;
             _logger = logger;
+            _adSettings = adSettings;
         }
 
         [HttpGet]
@@ -30,7 +35,8 @@ namespace AuthorizationForm.Controllers
             // Check if user is already signed in via cookie
             if (_signInManager.IsSignedIn(User))
             {
-                return RedirectToLocal(returnUrl);
+                var currentUser = await _userManager.GetUserAsync(User);
+                return await RedirectToLocal(returnUrl, currentUser);
             }
 
             // Check if user is authenticated via Windows Authentication
@@ -64,7 +70,7 @@ namespace AuthorizationForm.Controllers
                         if (user != null)
                         {
                             await _signInManager.SignInAsync(user, true);
-                            return RedirectToLocal(returnUrl);
+                            return await RedirectToLocal(returnUrl, user);
                         }
                         
                         // If user not found, redirect to home to let middleware import them
@@ -80,6 +86,7 @@ namespace AuthorizationForm.Controllers
             // No Windows Authentication - show manual login form
             ViewData["ReturnUrl"] = returnUrl;
             ViewData["ShowManualLogin"] = true;
+            ViewData["IsAdEnabled"] = _adSettings.Value?.Enabled == true;
             return View();
         }
 
@@ -89,6 +96,7 @@ namespace AuthorizationForm.Controllers
         public async Task<IActionResult> Login(LoginViewModel model, string? returnUrl = null)
         {
             ViewData["ReturnUrl"] = returnUrl;
+            ViewData["IsAdEnabled"] = _adSettings.Value?.Enabled == true;
 
             // Require all fields to be filled for anonymous users
             if (string.IsNullOrWhiteSpace(model.Email))
@@ -120,39 +128,20 @@ namespace AuthorizationForm.Controllers
                         var result = await _signInManager.PasswordSignInAsync(user.UserName!, model.Password, model.RememberMe, lockoutOnFailure: false);
                         _logger.LogInformation($"SignIn result for {user.UserName}: {result.Succeeded}");
                         
-                    if (result.Succeeded)
-                    {
-                        _logger.LogInformation($"User {user.UserName} logged in successfully.");
-                        
-                        // Verify user has Admin role
-                        var isAdmin = await _userManager.IsInRoleAsync(user, "Admin");
-                        _logger.LogInformation($"User {user.UserName} - IsAdmin: {user.IsAdmin}, Has Admin Role: {isAdmin}");
-                        
-                        // If user should be admin but doesn't have role, add it
-                        if (user.IsAdmin && !isAdmin)
+                        if (result.Succeeded)
                         {
-                            await _userManager.AddToRoleAsync(user, "Admin");
-                            _logger.LogInformation($"Added Admin role to user {user.UserName}");
-                            // Sign in again to refresh claims with new role
-                            await _signInManager.SignOutAsync();
-                            await _signInManager.SignInAsync(user, model.RememberMe);
+                            _logger.LogInformation($"User {user.UserName} logged in successfully.");
+                            
+                            // Refresh sign in to update claims
+                            await _signInManager.RefreshSignInAsync(user);
+                            
+                            // Redirect based on role
+                            return await RedirectToLocal(returnUrl, user);
                         }
-                        
-                        // Refresh sign-in to ensure roles are loaded in claims
-                        // This is important because roles need to be in claims for User.IsInRole to work
-                        var roles = await _userManager.GetRolesAsync(user);
-                        _logger.LogInformation($"User {user.UserName} roles: {string.Join(", ", roles)}");
-                        
-                        // Sign out and sign in again to refresh claims
-                        await _signInManager.SignOutAsync();
-                        await _signInManager.SignInAsync(user, model.RememberMe);
-                        
-                        return RedirectToLocal(returnUrl);
-                    }
                         else
                         {
                             _logger.LogWarning($"SignIn failed for {user.UserName}. Result: {result}");
-                            ModelState.AddModelError(string.Empty, $"התחברות נכשלה. שגיאה: {result}");
+                            ModelState.AddModelError(string.Empty, "נסיון התחברות לא תקין. אנא בדוק את שם המשתמש והסיסמה.");
                         }
                     }
                     else
@@ -182,7 +171,7 @@ namespace AuthorizationForm.Controllers
         }
 
         [HttpGet]
-        [Authorize]
+        [AllowAnonymous]
         public async Task<IActionResult> LogoutGet()
         {
             await _signInManager.SignOutAsync();
@@ -190,18 +179,138 @@ namespace AuthorizationForm.Controllers
             return RedirectToAction(nameof(Login));
         }
 
+        [AllowAnonymous]
         public IActionResult AccessDenied()
         {
             return View();
         }
 
-        private IActionResult RedirectToLocal(string? returnUrl)
+        [HttpGet]
+        [AllowAnonymous]
+        public IActionResult Register()
+        {
+            // Only allow registration when AD is disabled
+            if (_adSettings.Value?.Enabled == true)
+            {
+                _logger.LogWarning("Registration attempted but AD is enabled");
+                return RedirectToAction("Login");
+            }
+
+            return View();
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        [AllowAnonymous]
+        public async Task<IActionResult> Register(RegisterViewModel model)
+        {
+            // Only allow registration when AD is disabled
+            if (_adSettings.Value?.Enabled == true)
+            {
+                _logger.LogWarning("Registration attempted but AD is enabled");
+                ModelState.AddModelError(string.Empty, "הרשמה לא זמינה כאשר Active Directory מופעל");
+                return View(model);
+            }
+
+            if (ModelState.IsValid)
+            {
+                // Check if username already exists
+                var existingUserByUsername = await _userManager.FindByNameAsync(model.Username);
+                if (existingUserByUsername != null)
+                {
+                    ModelState.AddModelError(nameof(model.Username), "שם משתמש זה כבר קיים במערכת");
+                    return View(model);
+                }
+
+                // Check if email already exists
+                var existingUserByEmail = await _userManager.FindByEmailAsync(model.Email);
+                if (existingUserByEmail != null)
+                {
+                    ModelState.AddModelError(nameof(model.Email), "כתובת אימייל זו כבר קיימת במערכת");
+                    return View(model);
+                }
+
+                // Create new user
+                var user = new ApplicationUser
+                {
+                    UserName = model.Username,
+                    Email = model.Email,
+                    FullName = model.FullName,
+                    EmailConfirmed = true, // Auto-confirm email when AD is disabled
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                var result = await _userManager.CreateAsync(user, model.Password);
+
+                if (result.Succeeded)
+                {
+                    _logger.LogInformation($"New user registered: {user.UserName} ({user.Email})");
+
+                    // Assign "User" role to new registered users
+                    var roleResult = await _userManager.AddToRoleAsync(user, "User");
+                    if (roleResult.Succeeded)
+                    {
+                        _logger.LogInformation($"Assigned 'User' role to {user.UserName}");
+                    }
+                    else
+                    {
+                        _logger.LogWarning($"Failed to assign 'User' role to {user.UserName}: {string.Join(", ", roleResult.Errors.Select(e => e.Description))}");
+                    }
+
+                    // Sign in the user automatically after registration
+                    await _signInManager.SignInAsync(user, isPersistent: false);
+                    
+                    // Refresh sign in to update claims immediately (including roles)
+                    await _signInManager.RefreshSignInAsync(user);
+                    
+                    _logger.LogInformation($"User {user.UserName} signed in after registration");
+
+                    // Redirect based on role (new users start as regular users)
+                    return await RedirectToLocal(null, user);
+                }
+
+                // Add errors from Identity
+                foreach (var error in result.Errors)
+                {
+                    ModelState.AddModelError(string.Empty, error.Description);
+                }
+            }
+
+            return View(model);
+        }
+
+        private async Task<IActionResult> RedirectToLocal(string? returnUrl, ApplicationUser? user = null)
         {
             if (Url.IsLocalUrl(returnUrl))
             {
                 return Redirect(returnUrl);
             }
-            return RedirectToAction(nameof(HomeController.Index), "Home");
+            
+            // Get user if not provided
+            if (user == null)
+            {
+                user = await _userManager.GetUserAsync(User);
+            }
+            
+            if (user != null)
+            {
+                // Check if user is Admin
+                var isAdmin = await _userManager.IsInRoleAsync(user, "Admin");
+                if (isAdmin)
+                {
+                    return RedirectToAction("Index", "Admin");
+                }
+                
+                // Check if user is Manager
+                var isManager = await _userManager.IsInRoleAsync(user, "Manager");
+                if (isManager)
+                {
+                    return RedirectToAction("Index", "Manager");
+                }
+            }
+            
+            // Default: redirect to requests page
+            return RedirectToAction("Index", "Requests");
         }
     }
 

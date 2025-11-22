@@ -1,0 +1,139 @@
+@using AuthorizationForm.Models
+@model IEnumerable<EmailTemplate>
+@{
+    ViewData["Title"] = "ניהול תבניות אימייל";
+}
+
+<h2><i class="bi bi-envelope"></i> ניהול תבניות אימייל</h2>
+<hr />
+
+@if (TempData["Success"] != null)
+{
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <i class="bi bi-check-circle"></i> @TempData["Success"]
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+}
+
+<div class="mb-3">
+    <a asp-action="CreateEmailTemplate" class="btn btn-primary">
+        <i class="bi bi-plus-circle"></i> תבנית אימייל חדשה
+    </a>
+</div>
+
+@if (Model.Any())
+{
+    <div class="table-responsive">
+        <table class="table table-striped table-hover">
+            <thead class="table-dark">
+                <tr>
+                    <th>שם</th>
+                    <th>סוג טריגר</th>
+                    <th>נושא</th>
+                    <th>נמענים</th>
+                    <th>פעיל</th>
+                    <th>תאריך יצירה</th>
+                    <th>פעולות</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var template in Model)
+                {
+                    <tr>
+                        <td>@template.Name</td>
+                        <td>
+                            @switch (template.TriggerType)
+                            {
+                                case EmailTriggerType.RequestCreated:
+                                    <span class="badge bg-primary">בקשה נוצרה</span>
+                                    break;
+                                case EmailTriggerType.ManagerApprovalRequest:
+                                    <span class="badge bg-info">בקשת אישור מנהל</span>
+                                    break;
+                                case EmailTriggerType.ManagerApproved:
+                                    <span class="badge bg-success">מנהל אישר</span>
+                                    break;
+                                case EmailTriggerType.ManagerRejected:
+                                    <span class="badge bg-danger">מנהל דחה</span>
+                                    break;
+                                case EmailTriggerType.FinalApprovalRequest:
+                                    <span class="badge bg-warning">בקשת אישור סופי</span>
+                                    break;
+                                case EmailTriggerType.FinalApproved:
+                                    <span class="badge bg-success">אושר סופית</span>
+                                    break;
+                                case EmailTriggerType.FinalRejected:
+                                    <span class="badge bg-danger">דחה סופית</span>
+                                    break;
+                                case EmailTriggerType.RequestCancelledByUser:
+                                    <span class="badge bg-secondary">בוטל על ידי משתמש</span>
+                                    break;
+                                case EmailTriggerType.RequestCancelledByManager:
+                                    <span class="badge bg-secondary">בוטל על ידי מנהל</span>
+                                    break;
+                                case EmailTriggerType.StatusChanged:
+                                    <span class="badge bg-info">שינוי סטטוס</span>
+                                    break;
+                                default:
+                                    <span class="badge bg-secondary">@template.TriggerType</span>
+                                    break;
+                            }
+                        </td>
+                        <td>@template.Subject</td>
+                        <td>
+                            @switch (template.RecipientType)
+                            {
+                                case "User":
+                                    <span class="badge bg-primary">משתמש</span>
+                                    break;
+                                case "Manager":
+                                    <span class="badge bg-warning">מנהל</span>
+                                    break;
+                                case "FinalApprover":
+                                    <span class="badge bg-info">מאשר סופי</span>
+                                    break;
+                                case "Custom":
+                                    <span class="badge bg-secondary">מותאם</span>
+                                    break;
+                                default:
+                                    @template.RecipientType
+                                    break;
+                            }
+                        </td>
+                        <td>
+                            @if (template.IsActive)
+                            {
+                                <span class="badge bg-success">פעיל</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-secondary">לא פעיל</span>
+                            }
+                        </td>
+                        <td>@template.CreatedAt.ToString("dd/MM/yyyy")</td>
+                        <td>
+                            <div class="btn-group" role="group">
+                                <a asp-action="EditEmailTemplate" asp-route-id="@template.Id" class="btn btn-sm btn-warning">
+                                    <i class="bi bi-pencil"></i> ערוך
+                                </a>
+                                <form asp-action="DeleteEmailTemplate" asp-route-id="@template.Id" method="post" class="d-inline" onsubmit="return confirm('האם אתה בטוח שברצונך למחוק את התבנית?');">
+                                    @Html.AntiForgeryToken()
+                                    <button type="submit" class="btn btn-sm btn-danger">
+                                        <i class="bi bi-trash"></i> מחק
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+else
+{
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle"></i> אין תבניות אימייל במערכת
+    </div>
+}
+

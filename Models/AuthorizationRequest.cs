@@ -74,6 +74,10 @@ namespace AuthorizationForm.Models
         // PDF path if generated
         public string? PdfPath { get; set; }
         
+        // Reminder tracking
+        public DateTime? LastReminderSentAt { get; set; }
+        public int ReminderCount { get; set; } = 0;
+        
         public ICollection<RequestHistory> History { get; set; } = new List<RequestHistory>();
     }
 }

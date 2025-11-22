@@ -36,9 +36,11 @@ namespace AuthorizationForm.Middleware
                 return;
             }
 
-            // IMPORTANT: Skip auto-login on login page and POST requests to Account/Login
-            // This allows manual login to work properly
+            // IMPORTANT: Skip auto-login on login/register pages and POST requests to Account
+            // This allows manual login and registration to work properly
             if (context.Request.Path.StartsWithSegments("/Account/Login") || 
+                context.Request.Path.StartsWithSegments("/Account/Register") ||
+                context.Request.Path.StartsWithSegments("/Account/AccessDenied") ||
                 (context.Request.Path.StartsWithSegments("/Account") && context.Request.Method == "POST"))
             {
                 await _next(context);
@@ -117,58 +119,67 @@ namespace AuthorizationForm.Middleware
                     
                     if (user == null)
                     {
-                        // Try to import user from AD automatically
-                        try
+                        // Try to import user from AD automatically (only if AD is enabled)
+                        if (adSettings.Value?.Enabled == true && 
+                            !string.IsNullOrWhiteSpace(adSettings.Value?.LdapPath) &&
+                            !adSettings.Value.LdapPath.Contains("yourdomain.com"))
                         {
-                            var adUserInfo = await adService.GetUserInfoAsync(username);
-                            if (adUserInfo != null)
+                            try
                             {
-                                var managementGroup = adSettings.Value?.ManagementGroup ?? "";
-                                var isManager = !string.IsNullOrEmpty(managementGroup) && await adService.IsUserInGroupAsync(username, managementGroup);
-                                
-                                user = new ApplicationUser
+                                var adUserInfo = await adService.GetUserInfoAsync(username);
+                                if (adUserInfo != null)
                                 {
-                                    UserName = adUserInfo.Username,
-                                    Email = adUserInfo.Email ?? $"{adUserInfo.Username}@example.com",
-                                    FullName = adUserInfo.FullName,
-                                    Department = adUserInfo.Department,
-                                    IsManager = isManager,
-                                    IsAdmin = false,
-                                    EmailConfirmed = true
-                                };
-
-                                // Generate a random password
-                                var password = Guid.NewGuid().ToString() + "!Aa1";
-                                var result = await userManager.CreateAsync(user, password);
-                                
-                                if (result.Succeeded)
-                                {
-                                    if (isManager)
+                                    var managementGroup = adSettings.Value?.ManagementGroup ?? "";
+                                    var isManager = !string.IsNullOrEmpty(managementGroup) && await adService.IsUserInGroupAsync(username, managementGroup);
+                                    
+                                    user = new ApplicationUser
                                     {
-                                        await userManager.AddToRoleAsync(user, "Manager");
+                                        UserName = adUserInfo.Username,
+                                        Email = adUserInfo.Email ?? $"{adUserInfo.Username}@example.com",
+                                        FullName = adUserInfo.FullName,
+                                        Department = adUserInfo.Department,
+                                        IsManager = isManager,
+                                        IsAdmin = false,
+                                        EmailConfirmed = true
+                                    };
+
+                                    // Generate a random password
+                                    var password = Guid.NewGuid().ToString() + "!Aa1";
+                                    var result = await userManager.CreateAsync(user, password);
+                                    
+                                    if (result.Succeeded)
+                                    {
+                                        if (isManager)
+                                        {
+                                            await userManager.AddToRoleAsync(user, "Manager");
+                                        }
+                                        else
+                                        {
+                                            await userManager.AddToRoleAsync(user, "User");
+                                        }
+                                        
+                                        _logger.LogInformation($"Auto-imported user {username} from AD");
                                     }
                                     else
                                     {
-                                        await userManager.AddToRoleAsync(user, "User");
+                                        _logger.LogWarning($"Failed to auto-import user {username}: {string.Join(", ", result.Errors.Select(e => e.Description))}");
+                                        user = null; // Don't sign in if creation failed
                                     }
-                                    
-                                    _logger.LogInformation($"Auto-imported user {username} from AD");
                                 }
                                 else
                                 {
-                                    _logger.LogWarning($"Failed to auto-import user {username}: {string.Join(", ", result.Errors.Select(e => e.Description))}");
-                                    user = null; // Don't sign in if creation failed
+                                    _logger.LogInformation($"User {username} not found in AD - will require manual login");
                                 }
                             }
-                            else
+                            catch (Exception adEx)
                             {
-                                _logger.LogInformation($"User {username} not found in AD - will require manual login");
+                                _logger.LogWarning(adEx, $"Could not import user {username} from AD: {adEx.Message}");
+                                // Continue - user can still login manually
                             }
                         }
-                        catch (Exception adEx)
+                        else
                         {
-                            _logger.LogWarning(adEx, $"Could not import user {username} from AD: {adEx.Message}");
-                            // Continue - user can still login manually
+                            _logger.LogInformation($"AD is disabled or not configured - user {username} will require manual login");
                         }
                     }
                     

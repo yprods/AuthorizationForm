@@ -2,6 +2,24 @@
     ViewData["Title"] = "בית";
 }
 
+@if (User.Identity?.IsAuthenticated == true)
+{
+    <div class="alert alert-info alert-dismissible fade show" role="alert">
+        <i class="bi bi-info-circle"></i> 
+        <strong>מחובר:</strong> @(User.FindFirst("FullName")?.Value ?? User.Identity.Name)
+        @if (User.IsInRole("Admin"))
+        {
+            <span class="badge bg-danger ms-2">Admin</span>
+        }
+        @if (User.IsInRole("Manager"))
+        {
+            <span class="badge bg-warning ms-2">Manager</span>
+        }
+        <a href="/Debug/CheckUser" target="_blank" class="btn btn-sm btn-outline-info ms-2">בדוק פרטים</a>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+}
+
 <div class="row">
     <div class="col-md-12">
         <h1 class="mb-4">ברוך הבא למערכת הרשאות</h1>
@@ -44,6 +62,15 @@
                 {
                     <a asp-controller="Admin" asp-action="Index" class="btn btn-warning">
                         <i class="bi bi-gear"></i> ניהול
+                    </a>
+                }
+                else if (User.Identity?.IsAuthenticated == true)
+                {
+                    <div class="alert alert-info">
+                        <small>הרשאות לא זמינות. אם אתה מנהל, נא התנתק והתחבר שוב.</small>
+                    </div>
+                    <a asp-controller="Account" asp-action="LogoutGet" class="btn btn-secondary btn-sm">
+                        <i class="bi bi-box-arrow-right"></i> התנתק
                     </a>
                 }
                 else

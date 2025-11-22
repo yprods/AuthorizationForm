@@ -1,10 +1,28 @@
 @{
-    ViewData["Title"] = "אין גישה";
+    ViewData["Title"] = "גישה נדחתה";
 }
 
-<div class="text-center">
-    <h1 class="text-danger"><i class="bi bi-exclamation-triangle"></i> אין גישה</h1>
-    <p class="lead">אין לך הרשאה לגשת לדף זה.</p>
-    <a asp-controller="Home" asp-action="Index" class="btn btn-primary">חזור לדף הבית</a>
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-danger text-white text-center">
+                <h3><i class="bi bi-exclamation-triangle"></i> גישה נדחתה</h3>
+            </div>
+            <div class="card-body text-center">
+                <div class="mb-4">
+                    <i class="bi bi-shield-x display-1 text-danger"></i>
+                </div>
+                <h4>אין לך הרשאה לגשת לדף זה</h4>
+                <p class="text-muted">אם אתה חושב שזו שגיאה, אנא פנה למנהל המערכת.</p>
+                <div class="mt-4">
+                    <a asp-controller="Home" asp-action="Index" class="btn btn-primary">
+                        <i class="bi bi-house"></i> חזור לדף הבית
+                    </a>
+                    <a asp-controller="Account" asp-action="LogoutGet" class="btn btn-secondary">
+                        <i class="bi bi-box-arrow-right"></i> התנתק
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
-
