@@ -170,30 +170,125 @@ namespace AuthorizationForm.Controllers
             return View(await requestsQuery.OrderByDescending(r => r.CreatedAt).ToListAsync());
         }
 
-        // GET: Requests/Create
+        // GET: Requests/Create - Allow anonymous access so users can fill forms
+        [AllowAnonymous]
         public async Task<IActionResult> Create()
         {
             ViewBag.Employees = await _context.Employees.Where(e => e.IsActive).ToListAsync();
             ViewBag.Systems = await _context.Systems.Where(s => s.IsActive).ToListAsync();
             
-            var managers = await _userManager.GetUsersInRoleAsync("Manager");
-            ViewBag.Managers = managers.Where(m => m.IsManager || m.IsAdmin).ToList();
+            // Get managers - if no managers exist, return empty list (form will still work)
+            try
+            {
+                var managers = await _userManager.GetUsersInRoleAsync("Manager");
+                ViewBag.Managers = managers?.Where(m => m.IsManager || m.IsAdmin).ToList() ?? new List<ApplicationUser>();
+            }
+            catch
+            {
+                ViewBag.Managers = new List<ApplicationUser>();
+            }
 
             return View();
         }
 
-        // POST: Requests/Create
+        // POST: Requests/Create - Allow anonymous access so users can submit forms
         [HttpPost]
         [ValidateAntiForgeryToken]
+        [AllowAnonymous]
         public async Task<IActionResult> Create(CreateRequestViewModel model)
         {
             var currentUser = await _userManager.GetUserAsync(User);
-            if (currentUser == null) return Unauthorized();
-
-            if (ModelState.IsValid)
+            
+            // Allow anonymous users to create requests - create a user if needed
+            ApplicationUser? user = currentUser;
+            if (user == null)
             {
-                var user = currentUser;
+                // Require email for anonymous users
+                if (string.IsNullOrWhiteSpace(model.UserEmail))
+                {
+                    ModelState.AddModelError(nameof(model.UserEmail), "שדה אימייל הוא חובה למשתמשים לא מחוברים");
+                    ViewBag.Employees = await _context.Employees.Where(e => e.IsActive).ToListAsync();
+                    ViewBag.Systems = await _context.Systems.Where(s => s.IsActive).ToListAsync();
+                    try
+                    {
+                        var managers = await _userManager.GetUsersInRoleAsync("Manager");
+                        ViewBag.Managers = managers?.Where(m => m.IsManager || m.IsAdmin).ToList() ?? new List<ApplicationUser>();
+                    }
+                    catch
+                    {
+                        ViewBag.Managers = new List<ApplicationUser>();
+                    }
+                    return View(model);
+                }
+                else
+                {
+                    // Try to find or create a user based on email
+                    user = await _userManager.FindByEmailAsync(model.UserEmail);
+                    if (user == null)
+                    {
+                        // Create a new user from the form data
+                        user = new ApplicationUser
+                        {
+                            UserName = model.UserEmail,
+                            Email = model.UserEmail,
+                            FullName = model.UserFullName ?? model.UserEmail.Split('@')[0],
+                            EmailConfirmed = false,
+                            CreatedAt = DateTime.UtcNow
+                        };
+                        var createResult = await _userManager.CreateAsync(user);
+                        if (!createResult.Succeeded)
+                        {
+                            foreach (var error in createResult.Errors)
+                            {
+                                ModelState.AddModelError("", error.Description);
+                            }
+                            ViewBag.Employees = await _context.Employees.Where(e => e.IsActive).ToListAsync();
+                            ViewBag.Systems = await _context.Systems.Where(s => s.IsActive).ToListAsync();
+                            try
+                            {
+                                var managers = await _userManager.GetUsersInRoleAsync("Manager");
+                                ViewBag.Managers = managers?.Where(m => m.IsManager || m.IsAdmin).ToList() ?? new List<ApplicationUser>();
+                            }
+                            catch
+                            {
+                                ViewBag.Managers = new List<ApplicationUser>();
+                            }
+                            return View(model);
+                        }
+                        else
+                        {
+                            // Assign User role
+                            try
+                            {
+                                await _userManager.AddToRoleAsync(user, "User");
+                            }
+                            catch
+                            {
+                                // Role might not exist yet, continue anyway
+                            }
+                        }
+                    }
+                }
+            }
 
+            if (!ModelState.IsValid || user == null)
+            {
+                ViewBag.Employees = await _context.Employees.Where(e => e.IsActive).ToListAsync();
+                ViewBag.Systems = await _context.Systems.Where(s => s.IsActive).ToListAsync();
+                try
+                {
+                    var managers = await _userManager.GetUsersInRoleAsync("Manager");
+                    ViewBag.Managers = managers?.Where(m => m.IsManager || m.IsAdmin).ToList() ?? new List<ApplicationUser>();
+                }
+                catch
+                {
+                    ViewBag.Managers = new List<ApplicationUser>();
+                }
+                return View(model);
+            }
+
+            if (ModelState.IsValid && user != null)
+            {
                 var request = new AuthorizationRequest
                 {
                     UserId = user.Id,
@@ -213,12 +308,19 @@ namespace AuthorizationForm.Controllers
                 await _context.SaveChangesAsync();
 
                 // Add history
-                await _authorizationService.AddRequestHistoryAsync(
-                    request.Id, 
-                    RequestStatus.Draft, 
-                    RequestStatus.Draft, 
-                    user.Id,
-                    "בקשה נוצרה");
+                try
+                {
+                    await _authorizationService.AddRequestHistoryAsync(
+                        request.Id, 
+                        RequestStatus.Draft, 
+                        RequestStatus.Draft, 
+                        user.Id,
+                        "בקשה נוצרה");
+                }
+                catch
+                {
+                    // If history fails, continue anyway
+                }
 
                 // If disclosed, send to manager
                 if (model.DisclosureAcknowledged)
@@ -227,15 +329,22 @@ namespace AuthorizationForm.Controllers
                     request.UpdatedAt = DateTime.UtcNow;
                     await _context.SaveChangesAsync();
 
-                    await _authorizationService.AddRequestHistoryAsync(
-                        request.Id,
-                        RequestStatus.Draft,
-                        RequestStatus.PendingManagerApproval,
-                        user.Id,
-                        "בקשה נשלחה לאישור מנהל");
+                    try
+                    {
+                        await _authorizationService.AddRequestHistoryAsync(
+                            request.Id,
+                            RequestStatus.Draft,
+                            RequestStatus.PendingManagerApproval,
+                            user.Id,
+                            "בקשה נשלחה לאישור מנהל");
 
-                    await _emailService.SendManagerApprovalRequestAsync(request);
-                    await _emailService.SendAuthorizationRequestAsync(request);
+                        await _emailService.SendManagerApprovalRequestAsync(request);
+                        await _emailService.SendAuthorizationRequestAsync(request);
+                    }
+                    catch
+                    {
+                        // If email fails, continue anyway
+                    }
                 }
 
                 return RedirectToAction(nameof(Details), new { id = request.Id });
@@ -243,13 +352,21 @@ namespace AuthorizationForm.Controllers
 
             ViewBag.Employees = await _context.Employees.Where(e => e.IsActive).ToListAsync();
             ViewBag.Systems = await _context.Systems.Where(s => s.IsActive).ToListAsync();
-            var managers = await _userManager.GetUsersInRoleAsync("Manager");
-            ViewBag.Managers = managers.Where(m => m.IsManager || m.IsAdmin).ToList();
+            try
+            {
+                var managers = await _userManager.GetUsersInRoleAsync("Manager");
+                ViewBag.Managers = managers?.Where(m => m.IsManager || m.IsAdmin).ToList() ?? new List<ApplicationUser>();
+            }
+            catch
+            {
+                ViewBag.Managers = new List<ApplicationUser>();
+            }
 
             return View(model);
         }
 
-        // GET: Requests/Details/5
+        // GET: Requests/Details/5 - Allow anonymous access
+        [AllowAnonymous]
         public async Task<IActionResult> Details(int? id)
         {
             if (id == null) return NotFound();

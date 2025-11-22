@@ -87,7 +87,7 @@
                         <label asp-for="Email" class="form-label">
                             <strong>@Html.DisplayNameFor(m => m.Email)</strong> <span class="text-danger">*</span>
                         </label>
-                        <input asp-for="Email" class="form-control" placeholder="הכנס שם משתמש או אימייל" required autocomplete="username" />
+                        <input asp-for="Email" class="form-control" placeholder="הכנס שם משתמש או אימייל" required autocomplete="username" value="@(ViewData["Username"] ?? Model?.Email)" />
                         <span asp-validation-for="Email" class="text-danger"></span>
                         <small class="form-text text-muted">ניתן להכניס שם משתמש או כתובת אימייל</small>
                     </div>

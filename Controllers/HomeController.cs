@@ -1,3 +1,5 @@
+using AuthorizationForm.Controllers;
+using AuthorizationForm.Data;
 using AuthorizationForm.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
@@ -10,24 +12,41 @@ namespace AuthorizationForm.Controllers
     {
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly SignInManager<ApplicationUser> _signInManager;
+        private readonly ApplicationDbContext _context;
+        private readonly RoleManager<IdentityRole> _roleManager;
         private readonly ILogger<HomeController> _logger;
 
         public HomeController(
             UserManager<ApplicationUser> userManager, 
             SignInManager<ApplicationUser> signInManager,
+            ApplicationDbContext context,
+            RoleManager<IdentityRole> roleManager,
             ILogger<HomeController> logger)
         {
             _userManager = userManager;
             _signInManager = signInManager;
+            _context = context;
+            _roleManager = roleManager;
             _logger = logger;
         }
 
         public async Task<IActionResult> Index()
         {
-            // If user is not authenticated, redirect to login
+            // Check if setup is needed only for authenticated users accessing admin/management areas
+            // Allow anonymous users to access forms
+            if (User.Identity?.IsAuthenticated == true)
+            {
+                var isSetupNeeded = await SetupController.IsSetupNeededAsync(_context, _userManager, _roleManager);
+                if (isSetupNeeded)
+                {
+                    return RedirectToAction("Index", "Setup");
+                }
+            }
+
+            // If user is not authenticated, redirect to create form (allow anonymous access)
             if (!User.Identity?.IsAuthenticated ?? true)
             {
-                return RedirectToAction("Login", "Account");
+                return RedirectToAction("Create", "Requests");
             }
 
             var user = await _userManager.GetUserAsync(User);

@@ -132,6 +132,30 @@
         </div>
     </div>
 
+    @if (!User.Identity?.IsAuthenticated ?? true)
+    {
+        <div class="alert alert-info mb-3">
+            <i class="bi bi-info-circle"></i> <strong>שימו לב:</strong> אינכם מחוברים למערכת. אנא מלאו את הפרטים הבאים:
+        </div>
+        <div class="row">
+            <div class="col-md-6">
+                <div class="form-group mb-3">
+                    <label asp-for="UserFullName" class="form-label"></label>
+                    <input asp-for="UserFullName" class="form-control" placeholder="הכנס שם מלא" />
+                    <span asp-validation-for="UserFullName" class="text-danger"></span>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="form-group mb-3">
+                    <label asp-for="UserEmail" class="form-label"></label>
+                    <input asp-for="UserEmail" type="email" class="form-control" placeholder="הכנס אימייל" required />
+                    <span asp-validation-for="UserEmail" class="text-danger"></span>
+                    <small class="form-text text-muted">האימייל ישמש ליצירת משתמש במערכת</small>
+                </div>
+            </div>
+        </div>
+    }
+
     <div class="row">
         <div class="col-md-12">
             <div class="form-check mb-3">

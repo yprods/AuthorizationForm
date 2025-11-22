@@ -30,7 +30,7 @@ namespace AuthorizationForm.Controllers
 
         [HttpGet]
         [AllowAnonymous]
-        public async Task<IActionResult> Login(string? returnUrl = null)
+        public async Task<IActionResult> Login(string? returnUrl = null, string? username = null)
         {
             // Check if user is already signed in via cookie
             if (_signInManager.IsSignedIn(User))
@@ -64,8 +64,8 @@ namespace AuthorizationForm.Controllers
                         await Task.Delay(100);
                         
                         // Try to get the user and sign in immediately
-                        var username = windowsIdentity.Name?.Split('\\').LastOrDefault() ?? windowsIdentity.Name;
-                        var user = await _userManager.FindByNameAsync(username);
+                        var windowsUsername = windowsIdentity.Name?.Split('\\').LastOrDefault() ?? windowsIdentity.Name;
+                        var user = await _userManager.FindByNameAsync(windowsUsername);
                         
                         if (user != null)
                         {
@@ -87,7 +87,8 @@ namespace AuthorizationForm.Controllers
             ViewData["ReturnUrl"] = returnUrl;
             ViewData["ShowManualLogin"] = true;
             ViewData["IsAdEnabled"] = _adSettings.Value?.Enabled == true;
-            return View();
+            ViewData["Username"] = username; // Pre-fill username if provided (from setup wizard)
+            return View(new LoginViewModel { Email = username ?? "" });
         }
 
         [HttpPost]

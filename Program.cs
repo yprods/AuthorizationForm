@@ -25,6 +25,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container
 builder.Services.AddControllersWithViews();
+builder.Services.AddRazorPages();
 
 // Configure Database - MySQL with SQLite fallback
 var useMySql = builder.Configuration.GetValue<bool>("DatabaseSettings:UseMySql", true);
@@ -128,7 +129,7 @@ builder.Services.AddAuthorization(options =>
 {
     // Only require authentication for pages marked with [Authorize]
     // Pages marked with [AllowAnonymous] will be accessible without authentication
-    options.FallbackPolicy = null; // Allow anonymous by default
+    // Don't set FallbackPolicy - allow anonymous by default, enforce auth only where [Authorize] is used
 });
 
 // Add memory cache for AD queries
@@ -173,17 +174,25 @@ if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Home/Error");
     app.UseHsts();
 }
+else
+{
+    app.UseDeveloperExceptionPage();
+}
 
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 
 app.UseRouting();
 
+// Check if setup is needed - must be after routing but before authentication
+app.UseSetupCheck();
+
+app.UseSession(); // Session must be before Authentication
+
 // Enable authentication and authorization
 app.UseAuthentication();
 app.UseAutoLogin(); // Auto-login via Windows Authentication (must be after UseAuthentication)
 app.UseAuthorization();
-app.UseSession();
 
 // Set default culture to Hebrew
 var supportedCultures = new[] { "he-IL" };
@@ -202,11 +211,15 @@ app.MapControllerRoute(
     pattern: "{controller=Home}/{action=Index}/{id?}");
 
 // Map API controllers (for attribute routing like [Route])
+app.MapRazorPages();
 app.MapControllers();
 
-// Seed database
-var scope = app.Services.CreateScope();
+// Seed database - run asynchronously
+_ = Task.Run(async () =>
 {
+    await Task.Delay(1000); // Wait a bit for the app to start
+    
+    using var scope = app.Services.CreateScope();
     var services = scope.ServiceProvider;
     var logger = services.GetRequiredService<ILogger<Program>>();
     try
@@ -282,44 +295,19 @@ var scope = app.Services.CreateScope();
             {
                 if (await context.Database.CanConnectAsync())
                 {
-                    DbInitializer.Initialize(context, userManager, roleManager, adminSettings);
-                    logger.LogInformation("Database initialization completed successfully.");
+                    // Only initialize roles, not admin users (setup wizard will create admin)
+                    DbInitializer.InitializeRoles(context, roleManager);
+                    logger.LogInformation("Database roles initialization completed successfully.");
                     
-                    // Verify admin user exists and ensure password matches appsettings.json
-                    var adminUser = await userManager.FindByNameAsync("admin");
-                    if (adminUser != null)
+                    // Check if setup is needed (no admin users exist)
+                    var adminUsers = await userManager.GetUsersInRoleAsync("Admin");
+                    if (adminUsers == null || !adminUsers.Any())
                     {
-                        var isAdmin = await userManager.IsInRoleAsync(adminUser, "Admin");
-                        logger.LogInformation($"Admin user 'admin' exists. IsAdmin role: {isAdmin}");
-                        
-                        // Get password from appsettings.json
-                        var adminPassword = adminSettings.Value?.AdminUsers?.FirstOrDefault()?.Password ?? "Qa123456";
-                        var passwordValid = await userManager.CheckPasswordAsync(adminUser, adminPassword);
-                        logger.LogInformation($"Admin user 'admin' password check with '{adminPassword}': {passwordValid}");
-                        
-                        // If password doesn't match, reset it
-                        if (!passwordValid)
-                        {
-                            logger.LogWarning($"Admin password doesn't match. Resetting to '{adminPassword}'...");
-                            var token = await userManager.GeneratePasswordResetTokenAsync(adminUser);
-                            var resetResult = await userManager.ResetPasswordAsync(adminUser, token, adminPassword);
-                            if (resetResult.Succeeded)
-                            {
-                                logger.LogInformation($"✓ Admin user 'admin' password reset successfully to '{adminPassword}'");
-                            }
-                            else
-                            {
-                                logger.LogError($"✗ Failed to reset admin password: {string.Join(", ", resetResult.Errors.Select(e => e.Description))}");
-                            }
-                        }
-                        else
-                        {
-                            logger.LogInformation($"✓ Admin password is correct: '{adminPassword}'");
-                        }
+                        logger.LogInformation("No admin users found. Setup wizard will be required on first access.");
                     }
                     else
                     {
-                        logger.LogWarning("Admin user 'admin' NOT FOUND! Check DbInitializer logs.");
+                        logger.LogInformation($"Found {adminUsers.Count} admin user(s). Setup already completed.");
                     }
                 }
                 else
@@ -340,11 +328,11 @@ var scope = app.Services.CreateScope();
             // The database will be created on first access if needed
         }
     }
-    finally
+    catch (Exception ex)
     {
-        scope.Dispose();
+        logger.LogError(ex, "Critical error in database initialization task");
     }
-}
+});
 
 app.Run();
 

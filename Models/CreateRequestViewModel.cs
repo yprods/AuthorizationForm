@@ -26,6 +26,14 @@ namespace AuthorizationForm.Models
         [Required]
         [Display(Name = "גילוי נאות ואישור")]
         public bool DisclosureAcknowledged { get; set; }
+
+        // Optional fields for anonymous users (required if not authenticated)
+        [Display(Name = "שם מלא")]
+        public string? UserFullName { get; set; }
+
+        [EmailAddress(ErrorMessage = "פורמט אימייל לא תקין")]
+        [Display(Name = "אימייל")]
+        public string? UserEmail { get; set; }
     }
 }
 

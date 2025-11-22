@@ -8,6 +8,28 @@ namespace AuthorizationForm.Data
 {
     public static class DbInitializer
     {
+        // Initialize only roles (used by setup wizard)
+        public static void InitializeRoles(
+            ApplicationDbContext context,
+            RoleManager<IdentityRole> roleManager)
+        {
+            // Create roles
+            if (!roleManager.RoleExistsAsync("Admin").Result)
+            {
+                roleManager.CreateAsync(new IdentityRole("Admin")).Wait();
+            }
+
+            if (!roleManager.RoleExistsAsync("Manager").Result)
+            {
+                roleManager.CreateAsync(new IdentityRole("Manager")).Wait();
+            }
+
+            if (!roleManager.RoleExistsAsync("User").Result)
+            {
+                roleManager.CreateAsync(new IdentityRole("User")).Wait();
+            }
+        }
+
         public static void Initialize(
             ApplicationDbContext context, 
             UserManager<ApplicationUser> userManager, 
@@ -74,20 +96,7 @@ namespace AuthorizationForm.Data
             }
 
             // Create roles
-            if (!roleManager.RoleExistsAsync("Admin").Result)
-            {
-                roleManager.CreateAsync(new IdentityRole("Admin")).Wait();
-            }
-
-            if (!roleManager.RoleExistsAsync("Manager").Result)
-            {
-                roleManager.CreateAsync(new IdentityRole("Manager")).Wait();
-            }
-
-            if (!roleManager.RoleExistsAsync("User").Result)
-            {
-                roleManager.CreateAsync(new IdentityRole("User")).Wait();
-            }
+            InitializeRoles(context, roleManager);
 
             // Create admin users from configuration
             var adminConfig = adminSettings.Value;
